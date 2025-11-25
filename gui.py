@@ -428,7 +428,7 @@ class Game2048GUI:
     def run(self, game: Optional[Game2048] = None, ai_callback: Optional[Callable] = None):
         """Запуск игры"""
         print("Starting game loop...")
-        self.game = game if game else Game2048()
+        self.game = game if game else Game2048(mode='classic') # Default to classic for GUI play
         self.ai_callback = ai_callback
         
         self._update_display()
@@ -462,7 +462,7 @@ def play_with_ai(model_path: str = "models/model_best.pt"):
     agent.policy_net.eval()
     
     def ai_callback(state, features, valid_moves):
-        return agent.policy_net.get_action(state, features, valid_moves, epsilon=0.0)
+        return agent.select_action(state, features, valid_moves, epsilon=0.0)
     
     gui = Game2048GUI()
     gui.ai_mode = True

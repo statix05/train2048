@@ -178,12 +178,14 @@ def train_terminal(n_episodes: int = 1000,
                    learning_rate: float = 1e-4,
                    batch_size: int = 64,
                    buffer_size: int = 50000,
-                   model_type: str = 'dueling'):
+                   model_type: str = 'dueling',
+                   game_mode: str = 'classic'):
     """Обучение с терминальным интерфейсом"""
     
     print(f"Starting training on device: {device}")
     print(f"Episodes: {n_episodes}")
     print(f"Model Type: {model_type}")
+    print(f"Game Mode: {game_mode}")
     print()
     
     # Создание агента
@@ -206,7 +208,7 @@ def train_terminal(n_episodes: int = 1000,
     try:
         for episode in range(1, n_episodes + 1):
             # Один эпизод
-            game = Game2048()
+            game = Game2048(mode=game_mode)
             result = trainer.train_episode(game)
             
             # Обновляем окна

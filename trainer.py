@@ -230,7 +230,7 @@ class Trainer:
                 valid_moves_int = [int(m) for m in valid_moves]
                 
                 # Выбираем действие без exploration (epsilon=0)
-                action = self.agent.policy_net.get_action(
+                action = self.agent.select_action(
                     state, features, valid_moves_int, epsilon=0.0
                 )
                 
