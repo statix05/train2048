@@ -263,7 +263,7 @@ def main():
     train_parser.add_argument('--resume', action='store_true', help='Resume from existing model')
     train_parser.add_argument('--gui', action='store_true', help='Use GUI for training visualization')
     train_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
-    train_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode: classic (90% 2 / 10% 4) or dynamic (scaling values)')
+    train_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode: classic (90%% 2 / 10%% 4) or dynamic (scaling values)')
     
     # Train GUI command
     subparsers.add_parser('train-gui', help='Train with GUI visualization')
