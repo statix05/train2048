@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+
+def clear():
+    os.system('clear' if os.name == 'posix' else 'cls')
+
+def header():
+    print("\033[96m╔════════════════════════════════════════════╗")
+    print("║          2048 AI CONTROLLER v2.0           ║")
+    print("╚════════════════════════════════════════════╝\033[0m")
+
+def menu():
+    clear()
+    header()
+    print("\n1. \033[92mPlay Manual\033[0m")
+    print("2. \033[94mPlay with AI\033[0m (Load Best Model)")
+    print("3. \033[93mTrain AI\033[0m (Terminal Mode)")
+    print("4. \033[93mTrain AI\033[0m (Background/Silent)")
+    print("5. \033[95mQuick Train\033[0m (Custom Params)")
+    print("6. \033[91mWatch Best Replay\033[0m (Surprise Feature!)")
+    print("7. Exit")
+    print()
+
+def get_model_choice():
+    print("\nSelect Neural Network Architecture:")
+    print("1. \033[1mDueling DQN\033[0m (Default, Best Overall)")
+    print("2. \033[1mConv DQN\033[0m (Standard CNN)")
+    print("3. \033[1mSimple DQN\033[0m (Fast, Less Smart)")
+    print("4. \033[1mHybrid DQN\033[0m (Experimental)")
+    
+    choice = input("\nChoice [1]: ").strip()
+    if choice == '2': return 'conv'
+    if choice == '3': return 'simple'
+    if choice == '4': return 'hybrid'
+    return 'dueling'
+
+def run():
+    while True:
+        menu()
+        choice = input("Select option: ").strip()
+        
+        if choice == '1':
+            os.system('python3 main.py play')
+        elif choice == '2':
+            os.system('python3 main.py play --ai')
+        elif choice == '3':
+            model = get_model_choice()
+            eps = input("Episodes [1000]: ").strip() or "1000"
+            os.system(f'python3 main.py train-terminal --episodes {eps} --model-type {model}')
+            input("\nPress Enter to continue...")
+        elif choice == '4':
+            model = get_model_choice()
+            eps = input("Episodes [5000]: ").strip() or "5000"
+            os.system(f'python3 main.py train --episodes {eps} --model-type {model}')
+            input("\nPress Enter to continue...")
+        elif choice == '5':
+            print("\n--- Quick Training Configuration ---")
+            model = get_model_choice()
+            eps = input("Episodes: ").strip()
+            if not eps: eps = "500"
+            os.system(f'python3 main.py train-terminal --episodes {eps} --model-type {model}')
+            input("\nPress Enter to continue...")
+        elif choice == '6':
+            os.system('python3 main.py replay')
+            input("\nPress Enter to continue...")
+        elif choice == '7':
+            print("Goodbye!")
+            sys.exit(0)
+        else:
+            pass
+
+if __name__ == "__main__":
+    try:
+        run()
+    except KeyboardInterrupt:
+        print("\nGoodbye!")

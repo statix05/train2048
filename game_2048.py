@@ -44,12 +44,35 @@ class Game2048:
         return self.get_state()
     
     def _spawn_tile(self) -> bool:
-        """Добавление новой плитки (90% - 2, 10% - 4)"""
+        """
+        Добавление новой плитки с динамической вероятностью
+        Max tile 64+:
+        2 (0%)
+        4 (55%)
+        8 (35%)
+        16 (10%)
+        32 (0%)
+        """
         empty_cells = list(zip(*np.where(self.board == 0)))
         if not empty_cells:
             return False
         row, col = random.choice(empty_cells)
-        self.board[row, col] = 4 if random.random() < 0.1 else 2
+        
+        # Динамический выбор значения плитки
+        if self.max_tile < 64:
+            # Классическая логика для начала игры
+            value = 4 if random.random() < 0.1 else 2
+        else:
+            # Продвинутая логика для поздней игры
+            r = random.random()
+            if r < 0.55:
+                value = max(2, int(self.max_tile / 16))
+            elif r < 0.90:
+                value = max(2, int(self.max_tile / 8))
+            else:
+                value = max(2, int(self.max_tile / 4))
+                
+        self.board[row, col] = value
         return True
     
     def _update_max_tile(self):
