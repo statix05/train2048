@@ -260,11 +260,79 @@ class Game2048GUI:
     
     def _make_move(self, direction: Direction):
         """Выполнение хода"""
+        # Сохраняем текущее состояние для анимации
+        old_max_tile = self.game.max_tile
+        self.last_board = self.game.board.copy()
+        
+        # Делаем ход
         reward, done, info = self.game.move(direction)
+        
+        # Проверяем новый max tile для эффекта
+        if self.game.max_tile > old_max_tile:
+             self._trigger_max_tile_effect()
+             
         self._update_display()
         
         if done:
             self._show_game_over()
+
+    def _trigger_max_tile_effect(self):
+        """Эффект при появлении нового максимального тайла"""
+        # 1. Shake Effect
+        original_geo = self.root.geometry()
+        try:
+            # Parse geometry string "WxH+X+Y"
+            import re
+            match = re.match(r"(\d+)x(\d+)\+(\d+)\+(\d+)", original_geo)
+            if match:
+                w, h, x, y = map(int, match.groups())
+                
+                # Shake sequence
+                offsets = [-10, 10, -10, 10, -5, 5, 0]
+                delay = 0
+                for offset in offsets:
+                    self.root.after(delay, lambda o=offset: self.root.geometry(f"{w}x{h}+{x+o}+{y}"))
+                    delay += 50
+        except Exception:
+            pass # Ignore geometry parsing errors
+            
+        # 2. Confetti / Flash on Canvas
+        self._create_confetti()
+        
+    def _create_confetti(self):
+        """Создание эффекта конфетти на канвасе"""
+        colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff']
+        import random
+        
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        
+        particles = []
+        for _ in range(50):
+            x = random.randint(0, width)
+            y = random.randint(0, height)
+            size = random.randint(5, 15)
+            color = random.choice(colors)
+            
+            # Create particle
+            particle = self.canvas.create_oval(x, y, x+size, y+size, fill=color, outline="")
+            particles.append(particle)
+            
+        # Animate particles falling/fading
+        self._animate_confetti(particles, 0)
+        
+    def _animate_confetti(self, particles, step):
+        if step > 20: # End animation
+            for p in particles:
+                self.canvas.delete(p)
+            return
+            
+        for p in particles:
+            self.canvas.move(p, 0, 5) # Move down
+            # Note: Tkinter doesn't support alpha transparency easily on canvas items
+            # so we just move them off screen or delete them at end
+            
+        self.root.after(50, lambda: self._animate_confetti(particles, step + 1))
     
     def _restart(self):
         """Перезапуск игры"""

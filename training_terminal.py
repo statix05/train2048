@@ -130,8 +130,25 @@ class TerminalTrainingDisplay:
         max_lines = max(len(board_lines), len(stats_lines))
         for i in range(max_lines):
             board_line = board_lines[i] if i < len(board_lines) else " " * 25
+            # Pad board_line to fixed width to ensure right column is aligned
+            # The board uses box drawing chars which might mess up len() if not careful,
+            # but here they are 1-char width. 
+            # The board width is 4 cells * 5 chars/cell + 1 char (start) + 1 char (end) = 22?
+            # Let's check draw_board: 
+            # "┌────┬────┬────┬────┐" -> len is 21
+            # "│ 16 │ 8  │ 16 │ 2  │" -> len is 21
+            # So we pad to 25
+            
+            # Clean padding using ljust with exact known width of board string (21)
+            # Use a slightly larger padding to separate columns
+            padding_len = 26 
+            
+            # Calculate visible length (len() works for these chars)
+            current_len = len(board_line)
+            padding = " " * (padding_len - current_len)
+            
             stats_line = stats_lines[i] if i < len(stats_lines) else ""
-            print(f"  {board_line}    {stats_line}")
+            print(f"  {board_line}{padding}{stats_line}")
         
         print()
         
