@@ -19,12 +19,13 @@ FOUND_PYTHON=""
 for py_path in "${PYTHON_PATHS[@]}"; do
     if [ -f "$py_path" ]; then
         echo "Проверяю: $py_path"
-        if $py_path -c "import tkinter" 2>/dev/null; then
-            echo "  ✅ Tkinter работает!"
+        # Проверяем не только импорт, но и создание окна
+        if $py_path -c "import tkinter; root = tkinter.Tk(); root.destroy()" 2>/dev/null; then
+            echo "  ✅ Tkinter работает полностью!"
             FOUND_PYTHON=$py_path
             break
         else
-            echo "  ❌ Tkinter не найден"
+            echo "  ❌ Tkinter не работает"
         fi
     fi
 done

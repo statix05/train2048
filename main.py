@@ -264,6 +264,13 @@ def main():
     # Train GUI command
     subparsers.add_parser('train-gui', help='Train with GUI visualization')
     
+    # Train terminal command
+    train_term_parser = subparsers.add_parser('train-terminal', help='Train with terminal visualization')
+    train_term_parser.add_argument('--episodes', type=int, default=1000, help='Number of episodes')
+    train_term_parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
+    train_term_parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
+    train_term_parser.add_argument('--buffer-size', type=int, default=50000, help='Buffer size')
+    
     # Demo command
     demo_parser = subparsers.add_parser('demo', help='Run AI demo in console')
     demo_parser.add_argument('--games', type=int, default=5, help='Number of games')
@@ -303,9 +310,20 @@ def main():
             print("Starting training GUI...")
             gui = TrainingGUI()
             gui.run()
-        except ImportError as e:
+        except Exception as e:
             print(f"Training GUI not available: {e}")
-            print("Install Tkinter to use GUI training.")
+            print("Falling back to terminal training...")
+            from training_terminal import train_terminal
+            train_terminal()
+    elif args.command == 'train-terminal':
+        # Терминальное обучение с визуализацией
+        from training_terminal import train_terminal
+        train_terminal(
+            n_episodes=args.episodes,
+            learning_rate=args.lr,
+            batch_size=args.batch_size,
+            buffer_size=args.buffer_size
+        )
     elif args.command == 'demo':
         demo_console(args)
     elif args.command == 'quick':

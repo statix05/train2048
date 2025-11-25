@@ -34,12 +34,12 @@ python --version
 
 echo ""
 echo "🔍 Проверка Tkinter..."
-if python -c "import tkinter" 2>/dev/null; then
-    echo -e "${GREEN}✅ Tkinter доступен${NC}"
+if python -c "import tkinter; tkinter.Tk().destroy()" 2>/dev/null; then
+    echo -e "${GREEN}✅ Tkinter доступен и работает${NC}"
     TKINTER_OK=true
 else
-    echo -e "${RED}❌ Tkinter недоступен${NC}"
-    echo "Используйте терминальный интерфейс или пересоздайте venv:"
+    echo -e "${YELLOW}⚠️  Tkinter есть но не работает полностью${NC}"
+    echo "Используйте терминальный интерфейс или переустановите Python:"
     echo "  ./activate_correct_python.sh"
     TKINTER_OK=false
 fi
@@ -98,12 +98,14 @@ if [ $# -eq 0 ]; then
             if [ "$TKINTER_OK" = true ]; then
                 python main.py train-gui
             else
-                echo "Training GUI требует Tkinter"
-                echo "Используйте консольное обучение: python main.py train --quick"
+                echo -e "${YELLOW}Training GUI требует работающий Tkinter${NC}"
+                echo "Используем терминальную версию с визуализацией..."
+                sleep 1
+                python training_terminal.py --episodes 1000
             fi
             ;;
         6)
-            python main.py train --quick
+            python training_terminal.py --episodes 500
             ;;
         7)
             echo "Выход..."

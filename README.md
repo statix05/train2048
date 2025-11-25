@@ -64,10 +64,14 @@ python main.py play --ai
 
 ### Обучение нейросети
 
-**С визуализацией (GUI):**
+**С визуализацией:**
 ```bash
-# Запустить Training GUI - видеть процесс обучения в реальном времени
+# Training GUI (если Tkinter работает)
 python main.py train-gui
+
+# Terminal Training (работает всегда) ⭐ НОВОЕ!
+python main.py train-terminal
+python training_terminal.py --episodes 1000
 
 # Или добавить флаг --gui к обычной команде
 python main.py train --quick --gui
