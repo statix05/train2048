@@ -107,8 +107,22 @@ class Trainer:
             'score': game.score,
             'max_tile': game.max_tile,
             'moves': game.moves,
-            'loss': np.mean(episode_loss) if episode_loss else 0.0
+            'loss': np.mean(episode_loss) if episode_loss else 0.0,
+            'history': [b.tolist() for b in game.history] # Convert numpy to list for JSON
         }
+    
+    def save_replay(self, history: List, score: int, max_tile: int):
+        """Save game replay to JSON"""
+        replay_data = {
+            'score': score,
+            'max_tile': max_tile,
+            'moves': len(history),
+            'timestamp': datetime.now().isoformat(),
+            'history': history
+        }
+        path = os.path.join(self.log_dir, "best_replay.json")
+        with open(path, 'w') as f:
+            json.dump(replay_data, f)
     
     def train(
         self,
@@ -142,9 +156,11 @@ class Trainer:
             self.score_window.append(result['score'])
             self.tile_window.append(result['max_tile'])
             
-            # Обновляем лучшие результаты
+            # Обновляем лучшие результаты и сохраняем реплей
             if result['score'] > self.best_score:
                 self.best_score = result['score']
+                self.save_replay(result['history'], result['score'], result['max_tile'])
+                
             if result['max_tile'] > self.best_max_tile:
                 self.best_max_tile = result['max_tile']
             
@@ -276,10 +292,11 @@ class Trainer:
         print(f"Logs saved to {log_path}")
 
 
-def quick_train(episodes: int = 1000):
+def quick_train(episodes: int = 1000, model_type: str = 'dueling'):
     """Быстрое обучение для демонстрации"""
     print(f"🚀 Starting quick training on {device}")
     print(f"   Episodes: {episodes}")
+    print(f"   Model: {model_type}")
     print("-" * 50)
     
     agent = DQNAgent(
@@ -287,7 +304,8 @@ def quick_train(episodes: int = 1000):
         buffer_size=50000,
         batch_size=64,
         target_update=500,
-        epsilon_decay=episodes * 5
+        epsilon_decay=episodes * 5,
+        model_type=model_type
     )
     
     trainer = Trainer(agent)

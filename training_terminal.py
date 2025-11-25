@@ -177,11 +177,13 @@ class TerminalTrainingDisplay:
 def train_terminal(n_episodes: int = 1000, 
                    learning_rate: float = 1e-4,
                    batch_size: int = 64,
-                   buffer_size: int = 50000):
+                   buffer_size: int = 50000,
+                   model_type: str = 'dueling'):
     """Обучение с терминальным интерфейсом"""
     
     print(f"Starting training on device: {device}")
     print(f"Episodes: {n_episodes}")
+    print(f"Model Type: {model_type}")
     print()
     
     # Создание агента
@@ -189,7 +191,8 @@ def train_terminal(n_episodes: int = 1000,
         learning_rate=learning_rate,
         buffer_size=buffer_size,
         batch_size=batch_size,
-        epsilon_decay=n_episodes * 5
+        epsilon_decay=n_episodes * 5,
+        model_type=model_type
     )
     
     trainer = Trainer(agent)
@@ -279,6 +282,7 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
     parser.add_argument('--buffer-size', type=int, default=50000, help='Buffer size')
+    parser.add_argument('--model', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Neural Network Architecture')
     
     args = parser.parse_args()
     
@@ -286,7 +290,8 @@ def main():
         n_episodes=args.episodes,
         learning_rate=args.lr,
         batch_size=args.batch_size,
-        buffer_size=args.buffer_size
+        buffer_size=args.buffer_size,
+        model_type=args.model
     )
 
 

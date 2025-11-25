@@ -41,6 +41,7 @@ def train_model(args):
     print(f"Episodes: {args.episodes}")
     print(f"Batch size: {args.batch_size}")
     print(f"Learning rate: {args.lr}")
+    print(f"Model Type: {args.model_type}")
     print("=" * 60)
     
     agent = DQNAgent(
@@ -48,7 +49,8 @@ def train_model(args):
         buffer_size=args.buffer_size,
         batch_size=args.batch_size,
         target_update=args.target_update,
-        epsilon_decay=args.episodes * 5
+        epsilon_decay=args.episodes * 5,
+        model_type=args.model_type
     )
     
     # Загрузка существующей модели если есть
@@ -260,6 +262,7 @@ def main():
     train_parser.add_argument('--quick', action='store_true', help='Quick training (500 episodes)')
     train_parser.add_argument('--resume', action='store_true', help='Resume from existing model')
     train_parser.add_argument('--gui', action='store_true', help='Use GUI for training visualization')
+    train_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
     
     # Train GUI command
     subparsers.add_parser('train-gui', help='Train with GUI visualization')
@@ -270,6 +273,12 @@ def main():
     train_term_parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
     train_term_parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
     train_term_parser.add_argument('--buffer-size', type=int, default=50000, help='Buffer size')
+    train_term_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
+    
+    # Replay command
+    replay_parser = subparsers.add_parser('replay', help='Watch best game replay')
+    replay_parser.add_argument('--file', default='logs/best_replay.json', help='Replay file path')
+    replay_parser.add_argument('--speed', type=float, default=0.2, help='Playback speed')
     
     # Demo command
     demo_parser = subparsers.add_parser('demo', help='Run AI demo in console')
@@ -322,8 +331,12 @@ def main():
             n_episodes=args.episodes,
             learning_rate=args.lr,
             batch_size=args.batch_size,
-            buffer_size=args.buffer_size
+            buffer_size=args.buffer_size,
+            model_type=args.model_type
         )
+    elif args.command == 'replay':
+        from replay_viewer import play_replay
+        play_replay(args.file, args.speed)
     elif args.command == 'demo':
         demo_console(args)
     elif args.command == 'quick':
