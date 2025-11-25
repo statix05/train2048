@@ -147,30 +147,30 @@ class Game2048DuelingDQN(nn.Module):
         
         # Обработка дополнительных признаков
         self.feature_encoder = nn.Sequential(
-            nn.Linear(n_features, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU()
+            nn.Linear(n_features, 128),
+            nn.GELU(),
+            nn.Linear(128, 128),
+            nn.GELU()
         )
         
         # Dueling streams
         # Value stream - оценивает насколько хорошо текущее состояние
         self.value_stream = nn.Sequential(
-            nn.Linear(256 + 64, 256),
-            nn.ReLU(),
+            nn.Linear(256 + 128, 256),
+            nn.GELU(),
             nn.Dropout(0.2),
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(128, 1)
         )
         
         # Advantage stream - оценивает преимущество каждого действия
         self.advantage_stream = nn.Sequential(
-            nn.Linear(256 + 64, 256),
-            nn.ReLU(),
+            nn.Linear(256 + 128, 256),
+            nn.GELU(),
             nn.Dropout(0.2),
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(128, n_actions)
         )
         
@@ -225,10 +225,10 @@ class Game2048DuelingDQN(nn.Module):
         x = self.global_pool(x).view(batch_size, -1)  # [batch, 256]
         
         # Обработка признаков
-        feat = self.feature_encoder(features)  # [batch, 64]
+        feat = self.feature_encoder(features)  # [batch, 128]
         
         # Объединение
-        combined = torch.cat([x, feat], dim=1)  # [batch, 320]
+        combined = torch.cat([x, feat], dim=1)  # [batch, 384]
         
         # Dueling architecture
         value = self.value_stream(combined)  # [batch, 1]

@@ -174,34 +174,34 @@ class Game2048:
         - Штраф за невозможный ход
         """
         if not moved:
-            return -10.0  # Штраф за невозможный ход
+            return -20.0  # Штраф за невозможный ход
         
         reward = 0.0
         
         # Награда за слияние (логарифмическая)
         if merge_score > 0:
-            reward += np.log2(merge_score + 1) * 2
+            reward += np.log2(merge_score + 1) * 2.5  # Increased weight
         
         # Бонус за пустые клетки
         empty_cells = np.sum(self.board == 0)
-        reward += empty_cells * 0.5
+        reward += empty_cells * 1.0  # Increased weight
         
         # Бонус за максимальный тайл в углу
         max_val = np.max(self.board)
         corners = [self.board[0, 0], self.board[0, -1], 
                    self.board[-1, 0], self.board[-1, -1]]
         if max_val in corners:
-            reward += np.log2(max_val + 1) * 1.5
+            reward += np.log2(max_val + 1) * 2.0  # Increased weight
         
         # Бонус за монотонность
-        reward += self._monotonicity_score() * 0.3
+        reward += self._monotonicity_score() * 0.5  # Increased weight
         
         # Бонус за гладкость (меньше разница между соседями)
         reward += self._smoothness_score() * 0.2
         
         # Штраф за проигрыш
         if done:
-            reward -= 50.0
+            reward -= 100.0
         
         return reward
     
