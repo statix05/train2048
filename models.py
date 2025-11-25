@@ -76,7 +76,7 @@ class ConvDQN(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(1, 64, kernel_size=2, padding=1)
         self.conv2 = nn.Conv2d(64, 128, kernel_size=2, padding=1)
-        self.fc1 = nn.Linear(128 * 5 * 5 + n_features, 256) # approximate size after padding
+        self.fc1 = nn.Linear(128 * 6 * 6 + n_features, 256) # Actual size: 4x4 -> pad 1 -> 5x5 -> pad 1 -> 6x6
         # Actual size check: 4x4 -> pad 1 -> 6x6 -> kernel 2 -> 5x5
         self.fc2 = nn.Linear(256, n_actions)
 

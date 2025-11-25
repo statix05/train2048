@@ -113,9 +113,13 @@ class Trainer:
     
     def save_replay(self, history: List, score: int, max_tile: int):
         """Save game replay to JSON"""
+        # Convert numpy types to native python types
+        if hasattr(score, 'item'): score = score.item()
+        if hasattr(max_tile, 'item'): max_tile = max_tile.item()
+        
         replay_data = {
-            'score': score,
-            'max_tile': max_tile,
+            'score': int(score),
+            'max_tile': int(max_tile),
             'moves': len(history),
             'timestamp': datetime.now().isoformat(),
             'history': history
