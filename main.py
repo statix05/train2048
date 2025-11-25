@@ -259,6 +259,10 @@ def main():
     train_parser.add_argument('--target-update', type=int, default=1000, help='Target network update frequency')
     train_parser.add_argument('--quick', action='store_true', help='Quick training (500 episodes)')
     train_parser.add_argument('--resume', action='store_true', help='Resume from existing model')
+    train_parser.add_argument('--gui', action='store_true', help='Use GUI for training visualization')
+    
+    # Train GUI command
+    subparsers.add_parser('train-gui', help='Train with GUI visualization')
     
     # Demo command
     demo_parser = subparsers.add_parser('demo', help='Run AI demo in console')
@@ -278,7 +282,30 @@ def main():
     elif args.command == 'train':
         if args.quick:
             args.episodes = 500
-        train_model(args)
+        
+        # Проверяем флаг GUI
+        if hasattr(args, 'gui') and args.gui:
+            try:
+                from training_gui import TrainingGUI
+                print("Starting training with GUI...")
+                gui = TrainingGUI()
+                gui.run()
+            except ImportError as e:
+                print(f"Training GUI not available: {e}")
+                print("Falling back to console training...")
+                train_model(args)
+        else:
+            train_model(args)
+    elif args.command == 'train-gui':
+        # Прямой запуск GUI обучения
+        try:
+            from training_gui import TrainingGUI
+            print("Starting training GUI...")
+            gui = TrainingGUI()
+            gui.run()
+        except ImportError as e:
+            print(f"Training GUI not available: {e}")
+            print("Install Tkinter to use GUI training.")
     elif args.command == 'demo':
         demo_console(args)
     elif args.command == 'quick':
