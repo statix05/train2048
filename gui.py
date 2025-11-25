@@ -1,9 +1,6 @@
 """
-Графический интерфейс 2048 с оригинальным дизайном
+Графический интерфейс 2048 с футуристичным дизайном (Neon Cyberpunk)
 Реализован на Tkinter (встроен в Python, не требует установки)
-- Оригинальные цвета 2048
-- Отображение статистики
-- Режим наблюдения за AI
 """
 import tkinter as tk
 from tkinter import messagebox
@@ -14,36 +11,45 @@ import time
 from game_2048 import Game2048, Direction
 
 
-# Цветовая схема - оригинальный стиль 2048
+# Цветовая схема - Neon Cyberpunk
 COLORS = {
-    'background': '#faf8ef',
-    'board_bg': '#bbada0',
-    'empty_cell': '#cdc1b4',
-    'text_dark': '#776e65',
-    'text_light': '#f9f6f2',
-    'score_bg': '#8f7a66',
+    'background': '#050510',      # Deep Space Black
+    'board_bg': '#101025',        # Dark Blue-Grey
+    'empty_cell': '#1a1a35',      # Slightly Lighter Blue-Grey
+    'text_main': '#00ffff',       # Cyan
+    'text_alt': '#ff00ff',        # Magenta
+    'score_bg': '#202040',        # Dark Purple-Blue
+    'score_title': '#00ffff',     # Cyan
+    'score_val': '#ffffff',       # White
 }
 
-# Цвета плиток
+# Цвета плиток (Background Colors)
 TILE_COLORS = {
-    0: '#cdc1b4',
-    2: '#eee4da',
-    4: '#ede0c8',
-    8: '#f2b179',
-    16: '#f59563',
-    32: '#f67c5f',
-    64: '#f65e3b',
-    128: '#edcf72',
-    256: '#edcc61',
-    512: '#edc850',
-    1024: '#edc53f',
-    2048: '#edc22e',
-    4096: '#3c3a32',
-    8192: '#3c3a32',
-    16384: '#3c3a32',
-    32768: '#3c3a32',
-    65536: '#3c3a32',
+    0: '#1a1a35',       # Empty
+    2: '#00f5d4',       # Neon Mint
+    4: '#00bbf9',       # Neon Blue
+    8: '#9b5de5',       # Neon Purple
+    16: '#f15bb5',      # Neon Pink
+    32: '#fee440',      # Neon Yellow
+    64: '#f72585',      # Neon Red/Pink
+    128: '#4cc9f0',     # Light Blue
+    256: '#4361ee',     # Blue
+    512: '#3a0ca3',     # Dark Blue
+    1024: '#7209b7',    # Purple
+    2048: '#f72585',    # Pink/Red (Win tile)
+    4096: '#ff0000',    # Red
+    8192: '#00ff00',    # Green
 }
+
+# Text colors for tiles
+def get_text_color(value):
+    if value == 0: return COLORS['text_main']
+    # For neon tiles, use black or white depending on contrast
+    # Most neon colors are bright, so black text works well.
+    # Dark blue/purple tiles might need white text.
+    if value in [512, 1024, 4096, 8192]:
+        return '#ffffff'
+    return '#000000'
 
 # Размер шрифта для разных чисел
 FONT_SIZES = {
@@ -74,7 +80,7 @@ class Game2048GUI:
         # Создаём окно
         print("Creating Tkinter window...")
         self.root = tk.Tk()
-        self.root.title("2048 - AI Edition")
+        self.root.title("2048 - Cyberpunk AI Edition")
         self.root.configure(bg=COLORS['background'])
         self.root.resizable(False, False)
         print(f"Window size: {self.window_width}x{self.window_height}")
@@ -108,8 +114,8 @@ class Game2048GUI:
         title_label = tk.Label(
             header_frame, 
             text="2048", 
-            font=("Helvetica", 48, "bold"),
-            fg=COLORS['text_dark'],
+            font=("Courier New", 48, "bold"),
+            fg=COLORS['text_alt'],
             bg=COLORS['background']
         )
         title_label.pack(side=tk.LEFT, padx=20)
@@ -120,14 +126,14 @@ class Game2048GUI:
         
         tk.Label(
             score_frame, text="SCORE", 
-            font=("Helvetica", 12, "bold"),
-            fg="#eee4da", bg=COLORS['score_bg']
+            font=("Courier New", 12, "bold"),
+            fg=COLORS['score_title'], bg=COLORS['score_bg']
         ).pack()
         
         self.score_label = tk.Label(
             score_frame, text="0",
-            font=("Helvetica", 24, "bold"),
-            fg=COLORS['text_light'], bg=COLORS['score_bg']
+            font=("Courier New", 24, "bold"),
+            fg=COLORS['score_val'], bg=COLORS['score_bg']
         )
         self.score_label.pack()
         
@@ -137,22 +143,22 @@ class Game2048GUI:
         
         tk.Label(
             best_frame, text="BEST TILE",
-            font=("Helvetica", 12, "bold"),
-            fg="#eee4da", bg=COLORS['score_bg']
+            font=("Courier New", 12, "bold"),
+            fg=COLORS['score_title'], bg=COLORS['score_bg']
         ).pack()
         
         self.best_label = tk.Label(
             best_frame, text="0",
-            font=("Helvetica", 24, "bold"),
-            fg=COLORS['text_light'], bg=COLORS['score_bg']
+            font=("Courier New", 24, "bold"),
+            fg=COLORS['score_val'], bg=COLORS['score_bg']
         )
         self.best_label.pack()
         
         # AI индикатор
         self.ai_label = tk.Label(
             self.root, text="",
-            font=("Helvetica", 14, "bold"),
-            fg="#2ecc71", bg=COLORS['background']
+            font=("Courier New", 14, "bold"),
+            fg="#00ff00", bg=COLORS['background']
         )
         self.ai_label.pack()
         
@@ -170,8 +176,8 @@ class Game2048GUI:
         # Статистика
         self.stats_label = tk.Label(
             self.root, text="Moves: 0 | Empty: 14",
-            font=("Helvetica", 14),
-            fg=COLORS['text_dark'], bg=COLORS['background']
+            font=("Courier New", 14),
+            fg=COLORS['text_main'], bg=COLORS['background']
         )
         self.stats_label.pack()
         
@@ -179,8 +185,8 @@ class Game2048GUI:
         instructions = tk.Label(
             self.root,
             text="Arrow Keys: Move | R: Restart | A: Toggle AI | Q: Quit",
-            font=("Helvetica", 12),
-            fg=COLORS['text_dark'], bg=COLORS['background']
+            font=("Courier New", 12),
+            fg=COLORS['text_main'], bg=COLORS['background']
         )
         instructions.pack(pady=10)
         
@@ -203,7 +209,7 @@ class Game2048GUI:
                 
                 # Текст
                 cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                text = self.canvas.create_text(cx, cy, text="", font=("Helvetica", 48, "bold"))
+                text = self.canvas.create_text(cx, cy, text="", font=("Courier New", 48, "bold"))
                 row_texts.append(text)
             
             self.cells.append(row_cells)
@@ -274,7 +280,7 @@ class Game2048GUI:
         if self.ai_mode:
             self._ai_step()
     
-    def _quit(self):
+    def _quit(self, event=None):
         """Выход из игры"""
         self.running = False
         self.root.quit()
@@ -314,19 +320,22 @@ class Game2048GUI:
             for col in range(self.board_size):
                 value = self.game.board[row, col]
                 
-                # Цвет ячейки
-                color = TILE_COLORS.get(value, TILE_COLORS[65536])
+                # Цвет ячейки (default to black/empty if not found)
+                color = TILE_COLORS.get(value, TILE_COLORS.get(0))
+                if value > 8192: # Fallback for super high tiles
+                     color = TILE_COLORS[8192]
+
                 self.canvas.itemconfig(self.cells[row][col], fill=color)
                 
                 # Текст
                 if value > 0:
-                    text_color = COLORS['text_light'] if value >= 8 else COLORS['text_dark']
+                    text_color = get_text_color(value)
                     font_size = FONT_SIZES.get(value, 22)
                     self.canvas.itemconfig(
                         self.cell_texts[row][col],
                         text=str(value),
                         fill=text_color,
-                        font=("Helvetica", font_size, "bold")
+                        font=("Courier New", font_size, "bold")
                     )
                 else:
                     self.canvas.itemconfig(self.cell_texts[row][col], text="")
