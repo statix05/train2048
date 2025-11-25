@@ -156,7 +156,7 @@ def demo_console(args):
             features = game.get_features()
             valid_moves_int = [int(m) for m in valid_moves]
             
-            action = agent.policy_net.get_action(state, features, valid_moves_int, epsilon=0.0)
+            action = agent.select_action(state, features, valid_moves_int, epsilon=0.0)
             game.move(Direction(action))
             
             # Отображение
@@ -263,6 +263,7 @@ def main():
     train_parser.add_argument('--resume', action='store_true', help='Resume from existing model')
     train_parser.add_argument('--gui', action='store_true', help='Use GUI for training visualization')
     train_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
+    train_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode: classic (90% 2 / 10% 4) or dynamic (scaling values)')
     
     # Train GUI command
     subparsers.add_parser('train-gui', help='Train with GUI visualization')
@@ -274,6 +275,7 @@ def main():
     train_term_parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
     train_term_parser.add_argument('--buffer-size', type=int, default=50000, help='Buffer size')
     train_term_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
+    train_term_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode')
     
     # Replay command
     replay_parser = subparsers.add_parser('replay', help='Watch best game replay')
@@ -332,7 +334,8 @@ def main():
             learning_rate=args.lr,
             batch_size=args.batch_size,
             buffer_size=args.buffer_size,
-            model_type=args.model_type
+            model_type=args.model_type,
+            game_mode=args.mode
         )
     elif args.command == 'replay':
         from replay_viewer import play_replay

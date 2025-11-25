@@ -170,9 +170,10 @@ class DQNAgent:
                np.exp(-self.steps / self.epsilon_decay)
     
     def select_action(self, state: np.ndarray, features: np.ndarray, 
-                      valid_moves: List[int]) -> int:
+                      valid_moves: List[int], epsilon: Optional[float] = None) -> int:
         """Выбор действия"""
-        epsilon = self.get_epsilon()
+        if epsilon is None:
+            epsilon = self.get_epsilon()
         
         if random.random() < epsilon:
             return random.choice(valid_moves)

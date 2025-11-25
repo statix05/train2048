@@ -20,8 +20,9 @@ class Game2048:
     Класс игры 2048 с оптимизированной логикой и дополнительными метриками
     """
     
-    def __init__(self, size: int = 4):
+    def __init__(self, size: int = 4, mode: str = 'classic'):
         self.size = size
+        self.mode = mode  # 'classic' or 'dynamic'
         self.board = np.zeros((size, size), dtype=np.int32)
         self.score = 0
         self.moves = 0
@@ -45,25 +46,18 @@ class Game2048:
     
     def _spawn_tile(self) -> bool:
         """
-        Добавление новой плитки с динамической вероятностью
-        Max tile 64+:
-        2 (0%)
-        4 (55%)
-        8 (35%)
-        16 (10%)
-        32 (0%)
+        Добавление новой плитки.
+        Classic mode: 90% - 2, 10% - 4.
+        Dynamic mode: Increases spawn value based on max_tile.
         """
         empty_cells = list(zip(*np.where(self.board == 0)))
         if not empty_cells:
             return False
         row, col = random.choice(empty_cells)
         
-        # Динамический выбор значения плитки
-        if self.max_tile < 64:
-            # Классическая логика для начала игры
-            value = 4 if random.random() < 0.1 else 2
-        else:
-            # Продвинутая логика для поздней игры
+        value = 2
+        if self.mode == 'dynamic' and self.max_tile >= 64:
+             # Продвинутая логика для поздней игры (Arcade/Dynamic Mode)
             r = random.random()
             if r < 0.55:
                 value = max(2, int(self.max_tile / 16))
@@ -71,7 +65,10 @@ class Game2048:
                 value = max(2, int(self.max_tile / 8))
             else:
                 value = max(2, int(self.max_tile / 4))
-                
+        else:
+             # Classic 2048 logic
+             value = 4 if random.random() < 0.1 else 2
+             
         self.board[row, col] = value
         return True
     
