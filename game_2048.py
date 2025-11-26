@@ -48,7 +48,11 @@ class Game2048:
         """
         Добавление новой плитки.
         Classic mode: 90% - 2, 10% - 4.
-        Dynamic mode: Increases spawn value based on max_tile.
+        Dynamic mode: Scale probabilities based on max_tile.
+                      < 64:  90% (2)
+                      64+:   70% (2)
+                      128+:  20% (2)
+                      256+:  0% (2) -> All 4s
         """
         empty_cells = list(zip(*np.where(self.board == 0)))
         if not empty_cells:
@@ -56,15 +60,17 @@ class Game2048:
         row, col = random.choice(empty_cells)
         
         value = 2
-        if self.mode == 'dynamic' and self.max_tile >= 64:
-             # Продвинутая логика для поздней игры (Arcade/Dynamic Mode)
-            r = random.random()
-            if r < 0.55:
-                value = max(2, int(self.max_tile / 16))
-            elif r < 0.90:
-                value = max(2, int(self.max_tile / 8))
-            else:
-                value = max(2, int(self.max_tile / 4))
+        if self.mode == 'dynamic':
+             prob_2 = 0.9
+             
+             if self.max_tile >= 256:
+                 prob_2 = 0.0
+             elif self.max_tile >= 128:
+                 prob_2 = 0.2
+             elif self.max_tile >= 64:
+                 prob_2 = 0.7
+                 
+             value = 2 if random.random() < prob_2 else 4
         else:
              # Classic 2048 logic
              value = 4 if random.random() < 0.1 else 2
