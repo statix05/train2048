@@ -1,31 +1,41 @@
 """
-Система обучения нейросети для 2048
-Включает:
-- Цикл обучения с визуализацией прогресса
-- Валидацию и тестирование
+Alpha2048 Trainer
+=================
+
+Система обучения Alpha2048 с:
+- Self-play для сбора данных
+- Curriculum learning
+- Визуализация прогресса
 - Сохранение лучших моделей
-- Логирование метрик
+
+Оптимизировано для Apple Silicon (MPS).
 """
+
 import numpy as np
 import time
 import os
-from typing import List, Tuple, Optional
-from collections import deque
 import json
+from typing import Optional, Dict, List
+from collections import deque
 from datetime import datetime
 
-from game_2048 import Game2048, Direction
-from neural_network import DQNAgent, device
+from game_2048 import Game2048
+from alpha2048 import (
+    Alpha2048Agent, 
+    CurriculumManager,
+    get_device_info,
+    DEVICE
+)
 
 
-class Trainer:
+class Alpha2048Trainer:
     """
-    Класс для обучения агента играть в 2048
+    Тренер для Alpha2048 с self-play и curriculum learning.
     """
     
     def __init__(
         self,
-        agent: DQNAgent,
+        agent: Alpha2048Agent,
         save_dir: str = "models",
         log_dir: str = "logs"
     ):
@@ -37,292 +47,278 @@ class Trainer:
         os.makedirs(log_dir, exist_ok=True)
         
         # Метрики
-        self.episode_rewards = []
-        self.episode_scores = []
-        self.episode_max_tiles = []
-        self.episode_moves = []
-        self.training_losses = []
+        self.game_scores: List[int] = []
+        self.game_tiles: List[int] = []
+        self.game_moves: List[int] = []
+        self.training_losses: List[float] = []
         
-        self.best_score = 0
-        self.best_max_tile = 0
-        
-        # Moving averages для отображения прогресса
-        self.reward_window = deque(maxlen=100)
+        # Moving averages
         self.score_window = deque(maxlen=100)
         self.tile_window = deque(maxlen=100)
-    
-    def train_episode(self, game: Game2048, render: bool = False) -> dict:
-        """
-        Один эпизод обучения
-        """
-        state = game.get_state()
-        features = game.get_features()
         
-        total_reward = 0.0
-        episode_loss = []
-        
-        while True:
-            # Получаем допустимые ходы
-            valid_moves = game.get_valid_moves()
-            if not valid_moves:
-                break
-            
-            valid_moves_int = [int(m) for m in valid_moves]
-            
-            # Выбираем действие
-            action = self.agent.select_action(state, features, valid_moves_int)
-            
-            # Выполняем действие
-            reward, done, info = game.move(Direction(action))
-            
-            # Получаем новое состояние
-            next_state = game.get_state()
-            next_features = game.get_features()
-            
-            # Сохраняем опыт
-            self.agent.store_experience(
-                state, features, action, reward,
-                next_state, next_features, done
-            )
-            
-            # Обучаем
-            loss = self.agent.train_step()
-            if loss is not None:
-                episode_loss.append(loss)
-            
-            total_reward += reward
-            state = next_state
-            features = next_features
-            
-            if done:
-                break
-            
-            if render:
-                print(game)
-                print(f"Action: {Direction(action).name}, Reward: {reward:.2f}")
-                time.sleep(0.1)
-        
-        return {
-            'reward': total_reward,
-            'score': game.score,
-            'max_tile': game.max_tile,
-            'moves': game.moves,
-            'loss': np.mean(episode_loss) if episode_loss else 0.0,
-            'history': [b.tolist() for b in game.history] # Convert numpy to list for JSON
-        }
-    
-    def save_replay(self, history: List, score: int, max_tile: int):
-        """Save game replay to JSON"""
-        # Convert numpy types to native python types
-        if hasattr(score, 'item'): score = score.item()
-        if hasattr(max_tile, 'item'): max_tile = max_tile.item()
-        
-        replay_data = {
-            'score': int(score),
-            'max_tile': int(max_tile),
-            'moves': len(history),
-            'timestamp': datetime.now().isoformat(),
-            'history': history
-        }
-        path = os.path.join(self.log_dir, "best_replay.json")
-        with open(path, 'w') as f:
-            json.dump(replay_data, f)
+        # Лучшие результаты
+        self.best_score = 0
+        self.best_tile = 0
     
     def train(
         self,
-        n_episodes: int = 10000,
-        save_every: int = 500,
-        eval_every: int = 100,
-        eval_episodes: int = 10,
+        n_games: int = 1000,
+        games_per_training: int = 5,
+        train_steps_per_batch: int = 50,
+        save_every: int = 100,
+        eval_every: int = 50,
+        eval_games: int = 10,
+        temperature: float = 1.0,
         verbose: bool = True
-    ):
+    ) -> Dict:
         """
-        Основной цикл обучения
+        Основной цикл обучения.
+        
+        Args:
+            n_games: общее количество игр
+            games_per_training: игр перед каждой фазой обучения
+            train_steps_per_batch: шагов обучения после каждого батча игр
+            save_every: сохранять модель каждые N игр
+            eval_every: оценивать модель каждые N игр
+            eval_games: количество игр для оценки
+            temperature: начальная температура для exploration
+            verbose: подробный вывод
         """
         start_time = time.time()
+        device_info = get_device_info()
         
-        for episode in range(1, n_episodes + 1):
-            # Создаем новую игру
-            game = Game2048()
+        print("=" * 70)
+        print("🧠 Alpha2048 Training")
+        print("=" * 70)
+        print(f"Device: {device_info['name']} ({device_info['device']})")
+        print(f"Total games: {n_games}")
+        print(f"Games per training: {games_per_training}")
+        print(f"Training steps per batch: {train_steps_per_batch}")
+        print(f"Temperature: {temperature}")
+        
+        if self.agent.curriculum:
+            print(f"\n📚 Curriculum Learning: ENABLED")
+            print(self.agent.curriculum.get_status())
+        
+        print("=" * 70 + "\n")
+        
+        games_played = 0
+        batch_games = 0
+        
+        while games_played < n_games:
+            # === Self-play ===
+            trajectory, stats = self.agent.self_play(
+                game_mode='infinite',
+                temperature=temperature
+            )
+            self.agent.add_to_buffer(trajectory)
             
-            # Обучаем эпизод
-            result = self.train_episode(game)
+            # Записываем статистику
+            self.game_scores.append(stats['score'])
+            self.game_tiles.append(stats['max_tile'])
+            self.game_moves.append(stats['moves'])
+            self.score_window.append(stats['score'])
+            self.tile_window.append(stats['max_tile'])
             
-            # Сохраняем метрики
-            self.episode_rewards.append(result['reward'])
-            self.episode_scores.append(result['score'])
-            self.episode_max_tiles.append(result['max_tile'])
-            self.episode_moves.append(result['moves'])
-            if result['loss'] > 0:
-                self.training_losses.append(result['loss'])
+            if stats['score'] > self.best_score:
+                self.best_score = stats['score']
+            if stats['max_tile'] > self.best_tile:
+                self.best_tile = stats['max_tile']
             
-            self.reward_window.append(result['reward'])
-            self.score_window.append(result['score'])
-            self.tile_window.append(result['max_tile'])
+            games_played += 1
+            batch_games += 1
             
-            # Обновляем лучшие результаты и сохраняем реплей
-            if result['score'] > self.best_score:
-                self.best_score = result['score']
-                self.save_replay(result['history'], result['score'], result['max_tile'])
+            # === Обучение ===
+            if batch_games >= games_per_training:
+                batch_losses = []
+                for _ in range(train_steps_per_batch):
+                    losses = self.agent.train_step()
+                    if losses:
+                        batch_losses.append(losses['total'])
                 
-            if result['max_tile'] > self.best_max_tile:
-                self.best_max_tile = result['max_tile']
+                if batch_losses:
+                    avg_loss = np.mean(batch_losses)
+                    self.training_losses.append(avg_loss)
+                
+                batch_games = 0
             
-            # Логирование
-            if verbose and episode % 10 == 0:
-                avg_reward = np.mean(self.reward_window)
+            # === Вывод прогресса ===
+            if verbose and games_played % 10 == 0:
                 avg_score = np.mean(self.score_window)
                 avg_tile = np.mean(self.tile_window)
-                epsilon = self.agent.get_epsilon()
-                
                 elapsed = time.time() - start_time
-                eps_per_sec = episode / elapsed
+                games_per_sec = games_played / elapsed
                 
-                print(f"Episode {episode}/{n_episodes} | "
-                      f"Avg Reward: {avg_reward:.1f} | "
-                      f"Avg Score: {avg_score:.0f} | "
-                      f"Avg Max Tile: {avg_tile:.0f} | "
-                      f"Best: {self.best_score} ({self.best_max_tile}) | "
-                      f"ε: {epsilon:.3f} | "
-                      f"Speed: {eps_per_sec:.1f} ep/s")
-            
-            # Оценка
-            if episode % eval_every == 0:
-                eval_result = self.evaluate(eval_episodes)
-                print(f"\n📊 Evaluation ({eval_episodes} games):")
-                print(f"   Score: {eval_result['avg_score']:.0f} ± {eval_result['std_score']:.0f}")
-                print(f"   Max Tile Avg: {eval_result['avg_max_tile']:.0f}")
-                print(f"   Best in Eval: {eval_result['best_score']} ({eval_result['best_max_tile']})")
+                curriculum_info = ""
+                if self.agent.curriculum:
+                    stage = self.agent.curriculum.current_stage
+                    curriculum_info = f" | Stage: {stage.name} ({stage.current_success_rate:.0%})"
                 
-                # Распределение максимальных плиток
-                tile_dist = eval_result['tile_distribution']
-                dist_str = ", ".join([f"{k}: {v}" for k, v in sorted(tile_dist.items(), key=lambda x: -x[1])])
-                print(f"   Tile Distribution: {dist_str}\n")
+                loss_str = f" | Loss: {self.training_losses[-1]:.3f}" if self.training_losses else ""
+                
+                print(
+                    f"Game {games_played}/{n_games} | "
+                    f"Avg Score: {avg_score:.0f} | "
+                    f"Avg Tile: {avg_tile:.0f} | "
+                    f"Best: {self.best_score} ({self.best_tile})"
+                    f"{loss_str}{curriculum_info} | "
+                    f"Speed: {games_per_sec:.1f} g/s"
+                )
             
-            # Сохранение
-            if episode % save_every == 0:
-                self.save_checkpoint(episode)
+            # === Оценка ===
+            if games_played % eval_every == 0:
+                eval_results = self.evaluate(eval_games)
+                print(f"\n📊 Evaluation ({eval_games} games):")
+                print(f"   Score: {eval_results['avg_score']:.0f} ± {eval_results['std_score']:.0f}")
+                print(f"   Max Tile: {eval_results['avg_tile']:.0f}")
+                print(f"   Best: {eval_results['best_score']} ({eval_results['best_tile']})")
+                
+                # Распределение тайлов
+                dist = eval_results['tile_distribution']
+                dist_str = ", ".join([f"{k}:{v}" for k, v in sorted(dist.items(), key=lambda x: -x[0])[:5]])
+                print(f"   Tiles: {dist_str}\n")
+            
+            # === Сохранение ===
+            if games_played % save_every == 0:
+                self._save_checkpoint(games_played)
         
         # Финальное сохранение
-        self.save_checkpoint(n_episodes, final=True)
-        self.save_logs()
+        self._save_checkpoint(games_played, final=True)
+        self._save_logs()
         
-        print(f"\n🎉 Training completed!")
-        print(f"   Total episodes: {n_episodes}")
-        print(f"   Best score: {self.best_score}")
-        print(f"   Best max tile: {self.best_max_tile}")
-        print(f"   Total time: {time.time() - start_time:.1f}s")
+        elapsed = time.time() - start_time
+        
+        print("\n" + "=" * 70)
+        print("🎉 Training Complete!")
+        print("=" * 70)
+        print(f"Total games: {games_played}")
+        print(f"Best score: {self.best_score}")
+        print(f"Best tile: {self.best_tile}")
+        print(f"Total time: {elapsed:.1f}s ({elapsed/60:.1f} min)")
+        print(f"Training steps: {self.agent.training_steps}")
+        
+        if self.agent.curriculum:
+            print(f"\n📚 Final Curriculum Status:")
+            print(self.agent.curriculum.get_status())
+        
+        return {
+            'games_played': games_played,
+            'best_score': self.best_score,
+            'best_tile': self.best_tile,
+            'training_steps': self.agent.training_steps,
+            'elapsed_time': elapsed
+        }
     
-    def evaluate(self, n_episodes: int = 10) -> dict:
-        """
-        Оценка текущей модели (без exploration)
-        """
+    def evaluate(self, n_games: int = 10) -> Dict:
+        """Оценка модели без exploration"""
         scores = []
-        max_tiles = []
-        moves_list = []
+        tiles = []
+        moves = []
         
-        for _ in range(n_episodes):
-            game = Game2048()
-            state = game.get_state()
-            features = game.get_features()
+        for _ in range(n_games):
+            game = Game2048(mode='infinite')
             
-            while True:
-                valid_moves = game.get_valid_moves()
-                if not valid_moves:
-                    break
-                
-                valid_moves_int = [int(m) for m in valid_moves]
-                
-                # Выбираем действие без exploration (epsilon=0)
-                action = self.agent.select_action(
-                    state, features, valid_moves_int, epsilon=0.0
+            while not game.is_game_over():
+                # Используем MCTS с temperature=0 для лучшего хода
+                action, _ = self.agent.select_action(
+                    game, 
+                    use_mcts=False,  # Быстрый режим для eval
+                    temperature=0.0
                 )
                 
-                _, done, _ = game.move(Direction(action))
-                
-                state = game.get_state()
-                features = game.get_features()
-                
+                _, done, _ = game.move(game_2048.Direction(action))
                 if done:
                     break
             
             scores.append(game.score)
-            max_tiles.append(game.max_tile)
-            moves_list.append(game.moves)
+            tiles.append(game.max_tile)
+            moves.append(game.moves)
         
-        # Распределение максимальных плиток
         tile_dist = {}
-        for tile in max_tiles:
-            tile_dist[tile] = tile_dist.get(tile, 0) + 1
+        for t in tiles:
+            tile_dist[t] = tile_dist.get(t, 0) + 1
         
         return {
             'avg_score': np.mean(scores),
             'std_score': np.std(scores),
-            'avg_max_tile': np.mean(max_tiles),
+            'avg_tile': np.mean(tiles),
             'best_score': max(scores),
-            'best_max_tile': max(max_tiles),
-            'avg_moves': np.mean(moves_list),
+            'best_tile': max(tiles),
+            'avg_moves': np.mean(moves),
             'tile_distribution': tile_dist
         }
     
-    def save_checkpoint(self, episode: int, final: bool = False):
+    def _save_checkpoint(self, games: int, final: bool = False):
         """Сохранение контрольной точки"""
-        filename = "model_final.pt" if final else f"model_ep{episode}.pt"
+        filename = "alpha2048_final.pt" if final else f"alpha2048_g{games}.pt"
         path = os.path.join(self.save_dir, filename)
         self.agent.save(path)
         
-        # Сохраняем также лучшую модель
-        if self.episode_scores and self.episode_scores[-1] >= self.best_score * 0.95:
-            best_path = os.path.join(self.save_dir, "model_best.pt")
+        # Сохраняем лучшую модель
+        if self.game_scores and self.game_scores[-1] >= self.best_score * 0.95:
+            best_path = os.path.join(self.save_dir, "alpha2048_best.pt")
             self.agent.save(best_path)
     
-    def save_logs(self):
-        """Сохранение логов обучения"""
+    def _save_logs(self):
+        """Сохранение логов"""
         log_data = {
-            'episode_rewards': self.episode_rewards,
-            'episode_scores': self.episode_scores,
-            'episode_max_tiles': self.episode_max_tiles,
-            'episode_moves': self.episode_moves,
+            'game_scores': self.game_scores,
+            'game_tiles': self.game_tiles,
+            'game_moves': self.game_moves,
             'training_losses': self.training_losses,
             'best_score': self.best_score,
-            'best_max_tile': self.best_max_tile,
+            'best_tile': self.best_tile,
+            'training_steps': self.agent.training_steps,
+            'games_played': self.agent.games_played,
             'timestamp': datetime.now().isoformat()
         }
         
         log_path = os.path.join(self.log_dir, "training_log.json")
         with open(log_path, 'w') as f:
-            json.dump(log_data, f)
+            json.dump(log_data, f, indent=2)
         
-        print(f"Logs saved to {log_path}")
+        print(f"📝 Logs saved to {log_path}")
 
 
-def quick_train(episodes: int = 1000, model_type: str = 'dueling'):
+# Импорт Direction для evaluate
+import game_2048
+
+
+def quick_train(n_games: int = 100) -> Alpha2048Agent:
     """Быстрое обучение для демонстрации"""
-    print(f"🚀 Starting quick training on {device}")
-    print(f"   Episodes: {episodes}")
-    print(f"   Model: {model_type}")
+    print("🚀 Quick Training Demo")
     print("-" * 50)
     
-    agent = DQNAgent(
-        learning_rate=5e-4,
-        buffer_size=50000,
+    agent = Alpha2048Agent(
+        n_channels=64,
+        n_residual_blocks=3,
+        mcts_simulations=20,
         batch_size=64,
-        target_update=500,
-        epsilon_decay=episodes * 5,
-        model_type=model_type
+        use_curriculum=True
     )
     
-    trainer = Trainer(agent)
+    trainer = Alpha2048Trainer(agent)
     trainer.train(
-        n_episodes=episodes,
-        save_every=episodes // 2,
-        eval_every=episodes // 10,
-        eval_episodes=5
+        n_games=n_games,
+        games_per_training=5,
+        train_steps_per_batch=20,
+        save_every=n_games,
+        eval_every=n_games // 2,
+        eval_games=5,
+        verbose=True
     )
     
-    return agent, trainer
+    return agent
 
 
 if __name__ == "__main__":
-    # Быстрое обучение для демонстрации
-    agent, trainer = quick_train(500)
+    import sys
+    
+    n_games = 100
+    if len(sys.argv) > 1:
+        try:
+            n_games = int(sys.argv[1])
+        except ValueError:
+            pass
+    
+    quick_train(n_games)
