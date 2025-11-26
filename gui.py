@@ -18,8 +18,11 @@ Alpha2048 - Футуристичный GUI
 - SPACE - AI сделает ход
 """
 
+import os
+# Отключаем приветствие pygame
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
 import pygame
-import pygame.freetype  # Используем freetype вместо font для совместимости с Python 3.14
 import numpy as np
 import math
 import time
@@ -95,6 +98,99 @@ class GameState(Enum):
 
 
 # ============================================================================
+# SIMPLE TEXT RENDERER (без pygame.font)
+# ============================================================================
+
+class SimpleFont:
+    """Простой рендерер текста без использования pygame.font/freetype"""
+    
+    # 5x7 bitmap font для цифр и букв
+    CHARS = {
+        '0': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+        '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+        '2': ['01110', '10001', '00001', '00110', '01000', '10000', '11111'],
+        '3': ['01110', '10001', '00001', '00110', '00001', '10001', '01110'],
+        '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
+        '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+        '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
+        '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+        '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
+        '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+        'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+        'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+        'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+        'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+        'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+        'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+        'G': ['01110', '10001', '10000', '10111', '10001', '10001', '01110'],
+        'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+        'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+        'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+        'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+        'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+        'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
+        'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+        'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+        'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+        'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
+        'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+        'S': ['01110', '10001', '10000', '01110', '00001', '10001', '01110'],
+        'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+        'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+        'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+        'W': ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
+        'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
+        'Y': ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
+        'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+        ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+        ':': ['00000', '00100', '00100', '00000', '00100', '00100', '00000'],
+        '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
+        '/': ['00001', '00010', '00010', '00100', '01000', '01000', '10000'],
+        '[': ['01110', '01000', '01000', '01000', '01000', '01000', '01110'],
+        ']': ['01110', '00010', '00010', '00010', '00010', '00010', '01110'],
+        ',': ['00000', '00000', '00000', '00000', '00000', '00100', '01000'],
+        '.': ['00000', '00000', '00000', '00000', '00000', '00000', '00100'],
+        'x': ['00000', '00000', '10001', '01010', '00100', '01010', '10001'],
+    }
+    
+    def __init__(self, scale: int = 3):
+        self.scale = scale
+        self.char_width = 5 * scale + scale  # 5 pixels + spacing
+        self.char_height = 7 * scale
+    
+    def render(self, screen, text: str, color: Tuple[int, int, int], 
+               pos: Tuple[int, int], center: bool = False):
+        """Рендер текста"""
+        text = text.upper()
+        total_width = len(text) * self.char_width
+        
+        if center:
+            start_x = pos[0] - total_width // 2
+            start_y = pos[1] - self.char_height // 2
+        else:
+            start_x, start_y = pos
+        
+        for i, char in enumerate(text):
+            if char in self.CHARS:
+                self._draw_char(screen, char, color, 
+                              start_x + i * self.char_width, start_y)
+    
+    def _draw_char(self, screen, char: str, color: Tuple[int, int, int], 
+                   x: int, y: int):
+        """Отрисовка одного символа"""
+        bitmap = self.CHARS[char]
+        for row_idx, row in enumerate(bitmap):
+            for col_idx, pixel in enumerate(row):
+                if pixel == '1':
+                    pygame.draw.rect(
+                        screen, color,
+                        (x + col_idx * self.scale, 
+                         y + row_idx * self.scale,
+                         self.scale, self.scale)
+                    )
+
+
+# ============================================================================
 # GUI CLASS
 # ============================================================================
 
@@ -108,14 +204,13 @@ class Alpha2048GUI:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         
-        # Fonts using freetype with None (default font) - compatible with Python 3.14
-        # Using None loads the default pygame font without needing system font lookup
-        self.font_title = pygame.freetype.Font(None, 56)
-        self.font_large = pygame.freetype.Font(None, 38)
-        self.font_medium = pygame.freetype.Font(None, 28)
-        self.font_small = pygame.freetype.Font(None, 18)
-        self.font_tile = pygame.freetype.Font(None, 32)
-        self.font_tile_small = pygame.freetype.Font(None, 24)
+        # Simple bitmap fonts (no pygame.font needed)
+        self.font_title = SimpleFont(scale=5)
+        self.font_large = SimpleFont(scale=4)
+        self.font_medium = SimpleFont(scale=3)
+        self.font_small = SimpleFont(scale=2)
+        self.font_tile = SimpleFont(scale=4)
+        self.font_tile_small = SimpleFont(scale=3)
         
         # Game
         self.game: Optional[Game2048] = None
@@ -144,17 +239,7 @@ class Alpha2048GUI:
         
         # Bonus selection
         self.selecting_bonus_target = False
-        self.bonus_type = None  # 'remove' or 'sort'
-    
-    def render_text(self, font, text: str, color, pos, center: bool = False):
-        """Рендер текста с freetype"""
-        surface, rect = font.render(text, color)
-        if center:
-            rect.center = pos
-        else:
-            rect.topleft = pos
-        self.screen.blit(surface, rect)
-        return rect
+        self.bonus_type = None
     
     def run(self):
         """Главный цикл"""
@@ -164,7 +249,6 @@ class Alpha2048GUI:
             dt = self.clock.tick(FPS) / 1000.0
             self.glow_phase += dt * 2
             
-            # Events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -173,13 +257,11 @@ class Alpha2048GUI:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self.handle_click(event.pos)
             
-            # AI move
             if self.state == GameState.AI_WATCHING and self.game:
                 if time.time() - self.last_ai_move > self.ai_delay:
                     self.ai_move()
                     self.last_ai_move = time.time()
             
-            # Render
             self.render()
             pygame.display.flip()
         
@@ -199,7 +281,6 @@ class Alpha2048GUI:
         
         elif self.state in (GameState.PLAYING, GameState.AI_WATCHING):
             if self.selecting_bonus_target:
-                # Выбор цели для бонуса удаления
                 if key == pygame.K_ESCAPE:
                     self.selecting_bonus_target = False
                     self.bonus_type = None
@@ -216,16 +297,13 @@ class Alpha2048GUI:
             elif key in (pygame.K_RIGHT, pygame.K_d):
                 self.make_move(Direction.RIGHT)
             elif key == pygame.K_b:
-                # Бонус удаления
                 if self.game and self.game.can_use_bonus():
                     self.selecting_bonus_target = True
                     self.bonus_type = 'remove'
             elif key == pygame.K_t:
-                # Супер-бонус сортировки (T)
                 if self.game and self.game.can_use_sort_bonus():
                     self.game.use_sort_bonus()
             elif key == pygame.K_SPACE:
-                # AI делает один ход
                 self.ai_move()
         
         elif self.state == GameState.PAUSED:
@@ -245,7 +323,6 @@ class Alpha2048GUI:
         x, y = pos
         
         if self.selecting_bonus_target and self.game:
-            # Проверяем клик по тайлу
             tile_size = (BOARD_SIZE - 2 * BOARD_PADDING - 3 * TILE_GAP) // 4
             
             for row in range(4):
@@ -261,7 +338,6 @@ class Alpha2048GUI:
                         return
         
         if self.state == GameState.MENU:
-            # Проверяем клик по пунктам меню
             menu_y = 350
             for i, (text, action) in enumerate(self.menu_items):
                 item_rect = pygame.Rect(
@@ -281,7 +357,7 @@ class Alpha2048GUI:
         if action == 'exit':
             return False
         elif action == 'about':
-            pass  # TODO: показать about
+            pass
         elif action == 'ai':
             self.start_game('infinite')
             self.state = GameState.AI_WATCHING
@@ -306,10 +382,6 @@ class Alpha2048GUI:
         
         reward, done, info = self.game.move(direction)
         
-        if info.get('combo_triggered'):
-            # Показать эффект combo
-            pass
-        
         if done:
             self.state = GameState.GAME_OVER
     
@@ -320,13 +392,11 @@ class Alpha2048GUI:
                 self.state = GameState.GAME_OVER
             return
         
-        # Простая эвристика (можно заменить на Alpha2048)
         valid_moves = self.game.get_valid_moves()
         if not valid_moves:
             self.state = GameState.GAME_OVER
             return
         
-        # Приоритеты: DOWN > LEFT > RIGHT > UP
         priority = [Direction.DOWN, Direction.LEFT, Direction.RIGHT, Direction.UP]
         for d in priority:
             if d in valid_moves:
@@ -341,7 +411,6 @@ class Alpha2048GUI:
     
     def render(self):
         """Отрисовка"""
-        # Background gradient
         self.draw_gradient_bg()
         
         if self.state == GameState.MENU:
@@ -366,7 +435,6 @@ class Alpha2048GUI:
     
     def render_menu(self):
         """Отрисовка меню"""
-        # Title with glow
         glow = abs(math.sin(self.glow_phase)) * 0.5 + 0.5
         title_color = (
             int(COLORS['neon_cyan'][0] * glow + 255 * (1 - glow)),
@@ -374,113 +442,90 @@ class Alpha2048GUI:
             int(COLORS['neon_cyan'][2] * glow + 255 * (1 - glow))
         )
         
-        self.render_text(self.font_title, "ALPHA 2048", title_color, 
-                        (WINDOW_WIDTH // 2, 120), center=True)
+        self.font_title.render(self.screen, "ALPHA 2048", title_color, 
+                               (WINDOW_WIDTH // 2, 100), center=True)
         
-        # Subtitle
-        self.render_text(self.font_medium, "INFINITE MODE", COLORS['neon_magenta'],
-                        (WINDOW_WIDTH // 2, 180), center=True)
+        self.font_medium.render(self.screen, "INFINITE MODE", COLORS['neon_magenta'],
+                                (WINDOW_WIDTH // 2, 180), center=True)
         
-        # Decorative line
         pygame.draw.line(
             self.screen, COLORS['neon_cyan'],
             (WINDOW_WIDTH // 2 - 200, 220),
             (WINDOW_WIDTH // 2 + 200, 220), 2
         )
         
-        # Menu items
         menu_y = 350
         for i, (text, action) in enumerate(self.menu_items):
             is_selected = i == self.menu_selection
             
-            # Background
             if is_selected:
                 glow_alpha = int(abs(math.sin(self.glow_phase * 2)) * 100 + 50)
                 s = pygame.Surface((300, 50), pygame.SRCALPHA)
                 s.fill((*COLORS['neon_cyan'][:3], glow_alpha))
                 self.screen.blit(s, (WINDOW_WIDTH // 2 - 150, menu_y + i * 60))
                 
-                # Border
                 pygame.draw.rect(
                     self.screen, COLORS['neon_cyan'],
                     (WINDOW_WIDTH // 2 - 150, menu_y + i * 60, 300, 50), 2
                 )
             
             color = COLORS['text'] if is_selected else COLORS['text_dim']
-            self.render_text(self.font_medium, text, color,
-                           (WINDOW_WIDTH // 2, menu_y + i * 60 + 25), center=True)
+            self.font_medium.render(self.screen, text, color,
+                                    (WINDOW_WIDTH // 2, menu_y + i * 60 + 25), center=True)
         
-        # Instructions
-        self.render_text(self.font_small, "UP/DOWN Select  -  ENTER Confirm  -  ESC Exit", 
-                        COLORS['text_dim'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50), center=True)
+        self.font_small.render(self.screen, "UP/DOWN SELECT - ENTER CONFIRM - ESC EXIT", 
+                               COLORS['text_dim'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 50), center=True)
     
     def render_game(self):
         """Отрисовка игры"""
         if not self.game:
             return
         
-        # Header
         self.render_header()
-        
-        # Board
         self.render_board()
-        
-        # Bonuses
         self.render_bonuses()
-        
-        # Controls hint
         self.render_controls()
         
-        # Bonus selection overlay
         if self.selecting_bonus_target:
             self.render_bonus_selection()
     
     def render_header(self):
         """Заголовок с очками и статистикой"""
-        # Score
-        self.render_text(self.font_large, f"SCORE: {self.game.score:,}", 
-                        COLORS['text'], (30, 30))
+        self.font_large.render(self.screen, f"SCORE: {self.game.score}", 
+                               COLORS['text'], (30, 30))
         
-        # Max tile
         max_color = COLORS['gold'] if self.game.max_tile >= 2048 else COLORS['neon_cyan']
-        self.render_text(self.font_medium, f"MAX: {self.game.max_tile:,}", 
-                        max_color, (30, 80))
+        self.font_medium.render(self.screen, f"MAX: {self.game.max_tile}", 
+                                max_color, (30, 90))
         
-        # Moves
-        self.render_text(self.font_small, f"MOVES: {self.game.moves}", 
-                        COLORS['text_dim'], (30, 120))
+        self.font_small.render(self.screen, f"MOVES: {self.game.moves}", 
+                               COLORS['text_dim'], (30, 140))
         
-        # Mode
         mode_color = COLORS['neon_magenta'] if self.game.mode == 'infinite' else COLORS['text_dim']
-        self.render_text(self.font_small, f"MODE: {self.game.mode.upper()}", 
-                        mode_color, (WINDOW_WIDTH - 180, 30))
+        self.font_small.render(self.screen, f"MODE: {self.game.mode.upper()}", 
+                               mode_color, (WINDOW_WIDTH - 200, 30))
         
-        # Spawn info (dynamic mode)
         if self.game.mode != 'classic':
             spawn = self.game.get_spawn_tiles()
-            self.render_text(self.font_small, f"SPAWN: {spawn[0]}/{spawn[1]}", 
-                           COLORS['neon_green'], (WINDOW_WIDTH - 180, 60))
+            self.font_small.render(self.screen, f"SPAWN: {spawn[0]}/{spawn[1]}", 
+                                   COLORS['neon_green'], (WINDOW_WIDTH - 200, 70))
         
-        # Combo counter
         if self.game.total_combos > 0:
-            self.render_text(self.font_medium, f"COMBO x{self.game.total_combos}", 
-                           COLORS['combo'], (WINDOW_WIDTH - 200, 100))
+            self.font_medium.render(self.screen, f"COMBO x{self.game.total_combos}", 
+                                    COLORS['combo'], (WINDOW_WIDTH - 220, 110))
         
-        # AI indicator
         if self.state == GameState.AI_WATCHING:
-            self.render_text(self.font_medium, "AI PLAYING", 
-                           COLORS['neon_green'], (WINDOW_WIDTH // 2, 30), center=True)
+            self.font_medium.render(self.screen, "AI PLAYING", 
+                                    COLORS['neon_green'], (WINDOW_WIDTH // 2, 30), center=True)
     
     def render_board(self):
         """Отрисовка доски"""
-        # Board background with glow
         pygame.draw.rect(
             self.screen, COLORS['board_bg'],
             (BOARD_X - 5, BOARD_Y - 5, BOARD_SIZE + 10, BOARD_SIZE + 10),
             border_radius=15
         )
         
-        # Board border
         glow = abs(math.sin(self.glow_phase * 0.5)) * 0.3 + 0.7
         border_color = tuple(int(c * glow) for c in COLORS['neon_cyan'])
         pygame.draw.rect(
@@ -489,7 +534,6 @@ class Alpha2048GUI:
             3, border_radius=15
         )
         
-        # Tiles
         tile_size = (BOARD_SIZE - 2 * BOARD_PADDING - 3 * TILE_GAP) // 4
         
         for row in range(4):
@@ -502,27 +546,21 @@ class Alpha2048GUI:
     
     def render_tile(self, x: int, y: int, size: int, value: int):
         """Отрисовка одного тайла"""
-        # Get color
         if value in TILE_COLORS:
             color = TILE_COLORS[value]
         else:
-            # For very large values
             color = TILE_COLORS[65536]
         
-        # Tile background
         pygame.draw.rect(self.screen, color, (x, y, size, size), border_radius=8)
         
-        # Glow for high values
         if value >= 2048:
             glow = abs(math.sin(self.glow_phase + value * 0.001)) * 0.5 + 0.5
             glow_surf = pygame.Surface((size + 10, size + 10), pygame.SRCALPHA)
             glow_color = (*COLORS['gold'][:3], int(100 * glow))
             pygame.draw.rect(glow_surf, glow_color, (0, 0, size + 10, size + 10), border_radius=10)
             self.screen.blit(glow_surf, (x - 5, y - 5))
-            # Redraw tile on top
             pygame.draw.rect(self.screen, color, (x, y, size, size), border_radius=8)
         
-        # Value text
         if value > 0:
             text_color = (255, 255, 255) if value > 4 else (50, 50, 50)
             
@@ -531,8 +569,8 @@ class Alpha2048GUI:
             else:
                 font = self.font_tile
             
-            self.render_text(font, str(value), text_color, 
-                           (x + size // 2, y + size // 2), center=True)
+            font.render(self.screen, str(value), text_color, 
+                       (x + size // 2, y + size // 2), center=True)
     
     def render_bonuses(self):
         """Отрисовка бонусов"""
@@ -541,44 +579,37 @@ class Alpha2048GUI:
         
         bonus_y = BOARD_Y + BOARD_SIZE + 30
         
-        # Remove bonus
         if self.game.bonus_count > 0:
-            self.render_text(self.font_medium, f"Remove: {self.game.bonus_count}  [B]",
-                           COLORS['neon_orange'], (BOARD_X, bonus_y))
+            self.font_medium.render(self.screen, f"REMOVE: {self.game.bonus_count} [B]",
+                                    COLORS['neon_orange'], (BOARD_X, bonus_y))
         
-        # Sort bonus
         if self.game.sort_bonuses > 0:
-            self.render_text(self.font_medium, f"Sort: {self.game.sort_bonuses}  [T]",
-                           COLORS['neon_magenta'], (BOARD_X, bonus_y + 35))
+            self.font_medium.render(self.screen, f"SORT: {self.game.sort_bonuses} [T]",
+                                    COLORS['neon_magenta'], (BOARD_X, bonus_y + 40))
     
     def render_controls(self):
         """Подсказки управления"""
-        controls = "Arrows Move  -  SPACE AI Move  -  ESC Pause"
-        self.render_text(self.font_small, controls, COLORS['text_dim'],
-                        (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 30), center=True)
+        self.font_small.render(self.screen, "ARROWS MOVE - SPACE AI - ESC PAUSE", 
+                               COLORS['text_dim'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 30), center=True)
     
     def render_bonus_selection(self):
         """Оверлей выбора цели для бонуса"""
-        # Darken
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
         
-        # Instruction
-        self.render_text(self.font_large, "SELECT TILE TO REMOVE", 
-                        COLORS['neon_orange'], (WINDOW_WIDTH // 2, 180), center=True)
+        self.font_large.render(self.screen, "SELECT TILE TO REMOVE", 
+                               COLORS['neon_orange'], (WINDOW_WIDTH // 2, 180), center=True)
         
-        self.render_text(self.font_medium, "Click on a tile  -  ESC to cancel", 
-                        COLORS['text'], (WINDOW_WIDTH // 2, 220), center=True)
+        self.font_medium.render(self.screen, "CLICK ON A TILE - ESC TO CANCEL", 
+                                COLORS['text'], (WINDOW_WIDTH // 2, 230), center=True)
         
-        # Highlight board
         pygame.draw.rect(
             self.screen, COLORS['neon_orange'],
             (BOARD_X - 10, BOARD_Y - 10, BOARD_SIZE + 20, BOARD_SIZE + 20),
             4, border_radius=15
         )
         
-        # Re-render board
         self.render_board()
     
     def render_pause_overlay(self):
@@ -587,11 +618,11 @@ class Alpha2048GUI:
         overlay.fill((0, 0, 0, 180))
         self.screen.blit(overlay, (0, 0))
         
-        self.render_text(self.font_title, "PAUSED", COLORS['neon_cyan'],
-                        (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50), center=True)
+        self.font_title.render(self.screen, "PAUSED", COLORS['neon_cyan'],
+                               (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50), center=True)
         
-        self.render_text(self.font_medium, "ESC - Resume  -  Q - Quit to Menu", 
-                        COLORS['text'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 30), center=True)
+        self.font_medium.render(self.screen, "ESC RESUME - Q QUIT TO MENU", 
+                                COLORS['text'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 50), center=True)
     
     def render_game_over_overlay(self):
         """Оверлей окончания игры"""
@@ -599,26 +630,21 @@ class Alpha2048GUI:
         overlay.fill((0, 0, 0, 200))
         self.screen.blit(overlay, (0, 0))
         
-        # Title
-        self.render_text(self.font_title, "GAME OVER", COLORS['neon_red'],
-                        (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 100), center=True)
+        self.font_title.render(self.screen, "GAME OVER", COLORS['neon_red'],
+                               (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 100), center=True)
         
-        # Final score
-        self.render_text(self.font_large, f"FINAL SCORE: {self.game.score:,}", 
-                        COLORS['gold'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 20), center=True)
+        self.font_large.render(self.screen, f"FINAL SCORE: {self.game.score}", 
+                               COLORS['gold'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 20), center=True)
         
-        # Max tile
-        self.render_text(self.font_medium, f"MAX TILE: {self.game.max_tile:,}", 
-                        COLORS['text'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 30), center=True)
+        self.font_medium.render(self.screen, f"MAX TILE: {self.game.max_tile}", 
+                                COLORS['text'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 40), center=True)
         
-        # Combos
         if self.game.total_combos > 0:
-            self.render_text(self.font_medium, f"COMBOS: {self.game.total_combos}", 
-                           COLORS['combo'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 70), center=True)
+            self.font_medium.render(self.screen, f"COMBOS: {self.game.total_combos}", 
+                                    COLORS['combo'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 90), center=True)
         
-        # Hint
-        self.render_text(self.font_medium, "Press ENTER to continue", 
-                        COLORS['text_dim'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 130), center=True)
+        self.font_medium.render(self.screen, "PRESS ENTER TO CONTINUE", 
+                                COLORS['text_dim'], (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 150), center=True)
 
 
 # ============================================================================
