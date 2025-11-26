@@ -1,356 +1,302 @@
 #!/usr/bin/env python3
 """
-2048 AI - Главный модуль
-========================
+Alpha2048 - AI для игры 2048
+============================
 
-Игра 2048 с оригинальным интерфейсом и нейросетью на основе:
-- Dueling DQN архитектуры
-- Spatial Attention механизма
-- Priority Experience Replay
-- Креативной системы наград
+Реализация AlphaZero-подобного алгоритма для игры 2048:
+- Policy + Value + Planning нейросеть
+- MCTS с Chance Nodes для стохастичности
+- Curriculum Learning
+- Оптимизация под Apple Silicon (MPS)
 
 Режимы запуска:
-    python main.py play          - Ручная игра
-    python main.py play --ai     - Игра с AI
-    python main.py train         - Обучение модели
-    python main.py train --quick - Быстрое обучение (демо)
-    python main.py demo          - Демонстрация AI без GUI
+    python main.py              - Показать справку
+    python main.py demo         - Демонстрация AI
+    python main.py train        - Обучение модели
+    python main.py train 500    - Обучение на 500 игр
+    python main.py play         - Ручная игра
+    python main.py play --ai    - Наблюдение за AI
+    python main.py info         - Информация о системе
 """
 
 import argparse
 import os
 import sys
+import time
 
 
 def setup_environment():
     """Настройка окружения"""
-    # Создаем директории
     os.makedirs("models", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
 
-def train_model(args):
+def show_info():
+    """Показать информацию о системе"""
+    from alpha2048 import get_device_info, Alpha2048Network
+    import torch
+    
+    print("=" * 60)
+    print("🖥️  SYSTEM INFORMATION")
+    print("=" * 60)
+    
+    device_info = get_device_info()
+    print(f"\nDevice: {device_info['name']}")
+    print(f"Type: {device_info['device']}")
+    print(f"Memory: {device_info['memory']}")
+    
+    print(f"\nPyTorch version: {torch.__version__}")
+    print(f"MPS available: {torch.backends.mps.is_available()}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    
+    # Network info
+    net = Alpha2048Network(n_channels=128, n_residual_blocks=6)
+    params = sum(p.numel() for p in net.parameters())
+    print(f"\nNetwork parameters: {params:,}")
+    
+    # Check for saved models
+    print("\n📁 Saved models:")
+    if os.path.exists("models"):
+        models = [f for f in os.listdir("models") if f.endswith('.pt')]
+        if models:
+            for m in sorted(models):
+                size = os.path.getsize(f"models/{m}") / 1024 / 1024
+                print(f"   {m} ({size:.1f} MB)")
+        else:
+            print("   (none)")
+    else:
+        print("   (models directory not found)")
+
+
+def demo():
+    """Демонстрация AI"""
+    from alpha2048 import demo as alpha_demo
+    alpha_demo()
+
+
+def train(args):
     """Обучение модели"""
-    from neural_network import DQNAgent, device
-    from trainer import Trainer
+    from alpha2048 import Alpha2048Agent, get_device_info
+    from trainer import Alpha2048Trainer
+    
+    device_info = get_device_info()
+    
+    # Определяем размер сети в зависимости от устройства
+    if device_info['device'] == 'cpu':
+        # Меньшая сеть для CPU
+        n_channels = 64
+        n_blocks = 3
+        mcts_sims = 20
+    else:
+        # Полная сеть для GPU/MPS
+        n_channels = 128
+        n_blocks = 6
+        mcts_sims = 50
     
     print("=" * 60)
-    print("🧠 2048 Neural Network Training")
+    print("🧠 Alpha2048 Training")
     print("=" * 60)
-    print(f"Device: {device}")
-    print(f"Episodes: {args.episodes}")
-    print(f"Batch size: {args.batch_size}")
-    print(f"Learning rate: {args.lr}")
-    print(f"Model Type: {args.model_type}")
-    print("=" * 60)
+    print(f"Device: {device_info['name']}")
+    print(f"Network: {n_channels} channels, {n_blocks} blocks")
+    print(f"MCTS simulations: {mcts_sims}")
+    print(f"Games: {args.games}")
+    print("=" * 60 + "\n")
     
-    agent = DQNAgent(
+    agent = Alpha2048Agent(
+        n_channels=n_channels,
+        n_residual_blocks=n_blocks,
+        mcts_simulations=mcts_sims,
         learning_rate=args.lr,
-        buffer_size=args.buffer_size,
         batch_size=args.batch_size,
-        target_update=args.target_update,
-        epsilon_decay=args.episodes * 5,
-        model_type=args.model_type
+        use_curriculum=not args.no_curriculum
     )
     
-    # Загрузка существующей модели если есть
-    if args.resume and os.path.exists("models/model_best.pt"):
-        agent.load("models/model_best.pt")
-        print("Resumed from existing model")
+    # Загрузка существующей модели
+    if args.resume:
+        model_path = args.model or "models/alpha2048_best.pt"
+        if os.path.exists(model_path):
+            agent.load(model_path)
     
-    trainer = Trainer(agent)
+    trainer = Alpha2048Trainer(agent)
     trainer.train(
-        n_episodes=args.episodes,
-        save_every=max(1, args.episodes // 10),
-        eval_every=max(1, args.episodes // 20),
-        eval_episodes=5
+        n_games=args.games,
+        games_per_training=args.games_per_train,
+        train_steps_per_batch=args.train_steps,
+        save_every=max(10, args.games // 10),
+        eval_every=max(10, args.games // 20),
+        eval_games=5,
+        temperature=args.temperature,
+        verbose=True
     )
     
     return agent
 
 
-def play_game(args):
-    """Запуск игры"""
-    # Пробуем GUI (Tkinter)
-    try:
-        print("Trying to load GUI (Tkinter)...")
-        from gui import play_with_ai, play_manual
-        
-        print("✓ GUI loaded successfully!")
-        
-        if args.ai:
-            model_path = getattr(args, 'model', None) or "models/model_best.pt"
-            play_with_ai(model_path)
-        else:
-            play_manual()
-        return
-    
-    except ImportError as e:
-        if "_tkinter" in str(e):
-            print("✗ Tkinter not available (GUI requires Tkinter)")
-            print("  Install Python with Tkinter support or use terminal mode")
-        else:
-            print(f"✗ GUI failed: {e}")
-    
-    # Запасной вариант: терминальный интерфейс
-    try:
-        print("\n→ Using Terminal Interface instead...")
-        from gui_terminal import play_terminal, play_terminal_with_ai
-        
-        if args.ai:
-            model_path = getattr(args, 'model', None) or "models/model_best.pt"
-            play_terminal_with_ai(model_path)
-        else:
-            play_terminal()
-        return
-    
-    except Exception as e:
-        print(f"✗ Terminal interface failed: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Последний вариант: консольная демонстрация
-    print("\n→ Running console demo...")
-    demo_console(args)
-
-
-def demo_console(args):
-    """Демонстрация в консоли"""
+def play(args):
+    """Игра (ручная или с AI)"""
     from game_2048 import Game2048, Direction
-    from neural_network import DQNAgent, device
-    import time
+    from alpha2048 import Alpha2048Agent, get_device_info
+    import random
     
-    print("=" * 60)
-    print("🎮 2048 AI Console Demo")
-    print("=" * 60)
+    game = Game2048(mode='infinite')
     
-    # Загружаем модель
-    agent = DQNAgent()
-    model_path = getattr(args, 'model', None) or "models/model_best.pt"
-    
-    if os.path.exists(model_path):
-        agent.load(model_path)
-        print(f"Loaded model from {model_path}")
-    else:
-        print("No trained model found, using random agent")
-    
-    agent.policy_net.eval()
-    
-    # Играем несколько игр
-    n_games = getattr(args, 'games', 5)
-    verbose = getattr(args, 'verbose', False)
-    results = []
-    
-    for game_num in range(1, n_games + 1):
-        game = Game2048()
-        print(f"\n{'='*40}")
-        print(f"Game {game_num}/{n_games}")
-        print('='*40)
+    if args.ai:
+        # AI играет
+        print("🤖 AI Playing...")
+        
+        agent = Alpha2048Agent(
+            n_channels=64,
+            n_residual_blocks=3,
+            mcts_simulations=args.mcts
+        )
+        
+        model_path = args.model or "models/alpha2048_best.pt"
+        if os.path.exists(model_path):
+            agent.load(model_path)
+        else:
+            print("⚠️  No trained model found, using untrained network")
         
         while not game.is_game_over():
-            valid_moves = game.get_valid_moves()
-            if not valid_moves:
-                break
+            os.system('clear' if os.name == 'posix' else 'cls')
+            print(game)
             
-            state = game.get_state()
-            features = game.get_features()
-            valid_moves_int = [int(m) for m in valid_moves]
+            action, info = agent.select_action(
+                game, 
+                use_mcts=args.mcts > 0,
+                temperature=0.0
+            )
             
-            action = agent.select_action(state, features, valid_moves_int, epsilon=0.0)
+            directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+            print(f"\n🎯 AI move: {directions[action]}")
+            print(f"   Value: {info.get('value', 0):.3f}")
+            
             game.move(Direction(action))
-            
-            # Отображение
-            if verbose:
-                os.system('clear' if os.name == 'posix' else 'cls')
-                print(f"Game {game_num}/{n_games}")
-                print(game)
-                time.sleep(0.05)
+            time.sleep(args.delay)
         
-        results.append({
-            'score': game.score,
-            'max_tile': game.max_tile,
-            'moves': game.moves
-        })
-        
-        print(f"\nGame {game_num} finished!")
+        print("\n" + "=" * 40)
+        print("🏁 GAME OVER")
         print(f"Score: {game.score}")
         print(f"Max tile: {game.max_tile}")
         print(f"Moves: {game.moves}")
-    
-    # Итоговая статистика
-    print("\n" + "=" * 60)
-    print("📊 Final Statistics")
-    print("=" * 60)
-    
-    avg_score = sum(r['score'] for r in results) / len(results)
-    avg_tile = sum(r['max_tile'] for r in results) / len(results)
-    best_score = max(r['score'] for r in results)
-    best_tile = max(r['max_tile'] for r in results)
-    
-    print(f"Average Score: {avg_score:.0f}")
-    print(f"Average Max Tile: {avg_tile:.0f}")
-    print(f"Best Score: {best_score}")
-    print(f"Best Max Tile: {best_tile}")
-    
-    # Распределение плиток
-    tile_dist = {}
-    for r in results:
-        tile = r['max_tile']
-        tile_dist[tile] = tile_dist.get(tile, 0) + 1
-    
-    print("\nMax Tile Distribution:")
-    for tile in sorted(tile_dist.keys(), reverse=True):
-        count = tile_dist[tile]
-        pct = count / len(results) * 100
-        print(f"  {tile}: {count} ({pct:.1f}%)")
-
-
-def quick_demo():
-    """Быстрая демонстрация без обучения"""
-    from game_2048 import Game2048, Direction
-    import random
-    
-    print("=" * 60)
-    print("🎮 2048 Quick Demo (Random Agent)")
-    print("=" * 60)
-    
-    game = Game2048()
-    print("\nInitial state:")
-    print(game)
-    
-    move_count = 0
-    while not game.is_game_over() and move_count < 100:
-        valid_moves = game.get_valid_moves()
-        if not valid_moves:
-            break
         
-        move = random.choice(valid_moves)
-        reward, done, info = game.move(move)
-        move_count += 1
+    else:
+        # Ручная игра
+        print("🎮 Manual Play")
+        print("Controls: W/↑=UP, S/↓=DOWN, A/←=LEFT, D/→=RIGHT, Q=Quit")
+        print("In infinite mode: B=Use Bonus (if available)")
         
-        if move_count % 20 == 0:
-            print(f"\nAfter {move_count} moves:")
+        key_map = {
+            'w': Direction.UP, 'W': Direction.UP,
+            's': Direction.DOWN, 'S': Direction.DOWN,
+            'a': Direction.LEFT, 'A': Direction.LEFT,
+            'd': Direction.RIGHT, 'D': Direction.RIGHT,
+        }
+        
+        while not game.is_game_over():
+            os.system('clear' if os.name == 'posix' else 'cls')
             print(game)
-    
-    print(f"\n{'='*40}")
-    print("Final state:")
-    print(game)
-    print(f"\nGame Over! Score: {game.score}, Max Tile: {game.max_tile}")
+            
+            if game.bonus_count > 0:
+                print(f"\n🎁 Bonuses available: {game.bonus_count}")
+                print("   Press B to use (then enter row,col)")
+            
+            try:
+                key = input("\nMove (WASD/Q): ").strip()
+                
+                if key.lower() == 'q':
+                    print("Quit")
+                    break
+                
+                if key.lower() == 'b' and game.bonus_count > 0:
+                    pos = input("Enter row,col to remove (e.g. 1,2): ").strip()
+                    try:
+                        row, col = map(int, pos.split(','))
+                        if game.use_bonus_remove_tile(row, col):
+                            print(f"✅ Removed tile at ({row}, {col})")
+                        else:
+                            print("❌ Invalid position")
+                    except:
+                        print("❌ Invalid input")
+                    continue
+                
+                if key in key_map:
+                    game.move(key_map[key])
+                
+            except (EOFError, KeyboardInterrupt):
+                break
+        
+        print("\n" + "=" * 40)
+        print("🏁 GAME OVER")
+        print(game)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="2048 AI Game",
+        description="Alpha2048 - AlphaZero for 2048",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    subparsers = parser.add_subparsers(dest='command', help='Command')
+    
+    # Info command
+    subparsers.add_parser('info', help='Show system information')
+    
+    # Demo command
+    subparsers.add_parser('demo', help='Run AI demonstration')
+    
+    # Train command
+    train_parser = subparsers.add_parser('train', help='Train the model')
+    train_parser.add_argument('games', type=int, nargs='?', default=100,
+                             help='Number of games (default: 100)')
+    train_parser.add_argument('--lr', type=float, default=1e-3,
+                             help='Learning rate (default: 1e-3)')
+    train_parser.add_argument('--batch-size', type=int, default=128,
+                             help='Batch size (default: 128)')
+    train_parser.add_argument('--games-per-train', type=int, default=5,
+                             help='Games between training (default: 5)')
+    train_parser.add_argument('--train-steps', type=int, default=50,
+                             help='Training steps per batch (default: 50)')
+    train_parser.add_argument('--temperature', type=float, default=1.0,
+                             help='Exploration temperature (default: 1.0)')
+    train_parser.add_argument('--resume', action='store_true',
+                             help='Resume from saved model')
+    train_parser.add_argument('--model', type=str,
+                             help='Path to model file')
+    train_parser.add_argument('--no-curriculum', action='store_true',
+                             help='Disable curriculum learning')
     
     # Play command
     play_parser = subparsers.add_parser('play', help='Play the game')
-    play_parser.add_argument('--ai', action='store_true', help='Let AI play')
-    play_parser.add_argument('--model', type=str, help='Path to model file')
-    
-    # Train command
-    train_parser = subparsers.add_parser('train', help='Train the neural network')
-    train_parser.add_argument('--episodes', type=int, default=5000, help='Number of episodes')
-    train_parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
-    train_parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
-    train_parser.add_argument('--buffer-size', type=int, default=100000, help='Replay buffer size')
-    train_parser.add_argument('--target-update', type=int, default=1000, help='Target network update frequency')
-    train_parser.add_argument('--quick', action='store_true', help='Quick training (500 episodes)')
-    train_parser.add_argument('--resume', action='store_true', help='Resume from existing model')
-    train_parser.add_argument('--gui', action='store_true', help='Use GUI for training visualization')
-    train_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
-    train_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode: classic (90%% 2 / 10%% 4) or dynamic (scaling values)')
-    
-    # Train GUI command
-    subparsers.add_parser('train-gui', help='Train with GUI visualization')
-    
-    # Train terminal command
-    train_term_parser = subparsers.add_parser('train-terminal', help='Train with terminal visualization')
-    train_term_parser.add_argument('--episodes', type=int, default=1000, help='Number of episodes')
-    train_term_parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
-    train_term_parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
-    train_term_parser.add_argument('--buffer-size', type=int, default=50000, help='Buffer size')
-    train_term_parser.add_argument('--model-type', type=str, default='dueling', choices=['simple', 'conv', 'dueling', 'hybrid'], help='Network architecture')
-    train_term_parser.add_argument('--mode', type=str, default='classic', choices=['classic', 'dynamic'], help='Game mode')
-    
-    # Replay command
-    replay_parser = subparsers.add_parser('replay', help='Watch best game replay')
-    replay_parser.add_argument('--file', default='logs/best_replay.json', help='Replay file path')
-    replay_parser.add_argument('--speed', type=float, default=0.2, help='Playback speed')
-    
-    # Demo command
-    demo_parser = subparsers.add_parser('demo', help='Run AI demo in console')
-    demo_parser.add_argument('--games', type=int, default=5, help='Number of games')
-    demo_parser.add_argument('--model', type=str, help='Path to model file')
-    demo_parser.add_argument('--verbose', action='store_true', help='Show game progress')
-    
-    # Quick demo command
-    subparsers.add_parser('quick', help='Quick demo without training')
+    play_parser.add_argument('--ai', action='store_true',
+                            help='Watch AI play')
+    play_parser.add_argument('--model', type=str,
+                            help='Path to model file')
+    play_parser.add_argument('--mcts', type=int, default=20,
+                            help='MCTS simulations (0 for policy only)')
+    play_parser.add_argument('--delay', type=float, default=0.3,
+                            help='Delay between moves (seconds)')
     
     args = parser.parse_args()
     
     setup_environment()
     
-    if args.command == 'play':
-        play_game(args)
-    elif args.command == 'train':
-        if args.quick:
-            args.episodes = 500
-        
-        # Проверяем флаг GUI
-        if hasattr(args, 'gui') and args.gui:
-            try:
-                from training_gui import TrainingGUI
-                print("Starting training with GUI...")
-                gui = TrainingGUI()
-                gui.run()
-            except ImportError as e:
-                print(f"Training GUI not available: {e}")
-                print("Falling back to console training...")
-                train_model(args)
-        else:
-            train_model(args)
-    elif args.command == 'train-gui':
-        # Прямой запуск GUI обучения
-        try:
-            from training_gui import TrainingGUI
-            print("Starting training GUI...")
-            gui = TrainingGUI()
-            gui.run()
-        except Exception as e:
-            print(f"Training GUI not available: {e}")
-            print("Falling back to terminal training...")
-            from training_terminal import train_terminal
-            train_terminal()
-    elif args.command == 'train-terminal':
-        # Терминальное обучение с визуализацией
-        from training_terminal import train_terminal
-        train_terminal(
-            n_episodes=args.episodes,
-            learning_rate=args.lr,
-            batch_size=args.batch_size,
-            buffer_size=args.buffer_size,
-            model_type=args.model_type,
-            game_mode=args.mode
-        )
-    elif args.command == 'replay':
-        from replay_viewer import play_replay
-        play_replay(args.file, args.speed)
+    if args.command == 'info':
+        show_info()
     elif args.command == 'demo':
-        demo_console(args)
-    elif args.command == 'quick':
-        quick_demo()
+        demo()
+    elif args.command == 'train':
+        train(args)
+    elif args.command == 'play':
+        play(args)
     else:
-        # По умолчанию - быстрая демонстрация
         parser.print_help()
         print("\n" + "=" * 60)
-        print("Running quick demo...")
+        print("Quick start:")
+        print("  python main.py demo          # See AI in action")
+        print("  python main.py train 100     # Train for 100 games")
+        print("  python main.py play --ai     # Watch trained AI")
         print("=" * 60)
-        quick_demo()
 
 
 if __name__ == "__main__":
