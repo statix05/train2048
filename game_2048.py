@@ -1,11 +1,23 @@
 """
 2048 Game - Core Logic Module
-Оригинальная реализация игры 2048 с оптимизированной логикой
+=============================
+
+Полная реализация игры 2048 с:
+- Оригинальным подсчётом очков
+- Динамическим режимом (minTile scaling)
+- Системой Record Combo
+- Супер-бонусом сортировки
+
+Подсчёт очков (оригинальный):
+- При слиянии двух плиток очки = значение новой плитки
+- Например: 2+2=4 → +4 очка, 4+4=8 → +8 очков
 """
+
 import numpy as np
 import random
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Dict
 from enum import IntEnum
+from dataclasses import dataclass, field
 
 
 class Direction(IntEnum):
@@ -15,54 +27,78 @@ class Direction(IntEnum):
     RIGHT = 3
 
 
+@dataclass
+class RecordEvent:
+    """Событие установки рекорда"""
+    tile: int           # Значение нового рекордного тайла
+    move_number: int    # Номер хода
+    score: int          # Очки на момент рекорда
+    is_combo: bool      # Был ли это combo (рекорд в течение 2 ходов)
+
+
 class Game2048:
     """
-    Класс игры 2048 с оптимизированной логикой и дополнительными метриками
+    Игра 2048 с расширенной механикой.
     
-    Режимы игры:
+    Режимы:
     - 'classic': Стандартные правила 2048
-    - 'dynamic': Динамическое изменение минимального тайла на основе рекорда
-    - 'infinite': Бесконечный режим с динамическими правилами и бонусами
+    - 'dynamic': Динамический minTile на основе рекорда
+    - 'infinite': Dynamic + бонусы + combo
     
-    Формула динамического минимального тайла:
-    minTile = max(2, record / 128)
+    Формула minTile: max(2, record / 128)
     
-    256  → min=2  (2 исчезает)
-    512  → min=4  (4 исчезает) 
-    1024 → min=8  (8 исчезает)
-    2048 → min=16 и т.д.
+    Record Combo:
+    - Срабатывает если новый рекорд установлен в течение 2 ходов после предыдущего
+    - Даёт дополнительный бонус для тайлов от 256
+    - После 2048 даёт супер-бонус сортировки
     
-    Система бонусов (infinite mode):
-    - При достижении 2048, 4096, 8192... игрок получает бонус удаления блока
-    - Бонусы накапливаются и могут использоваться в любое время
+    Очки (оригинальная формула):
+    - score += merged_tile_value при каждом слиянии
     """
     
-    # Пороги для бонусов (степени двойки начиная с 2048)
+    # Пороги для обычных бонусов
     BONUS_THRESHOLDS = [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+    
+    # Пороги для record combo (от 256)
+    COMBO_THRESHOLDS = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]
+    
+    # Максимальное количество ходов для combo
+    COMBO_WINDOW = 2
     
     def __init__(self, size: int = 4, mode: str = 'classic'):
         self.size = size
-        self.mode = mode  # 'classic', 'dynamic', or 'infinite'
-        self.board = np.zeros((size, size), dtype=np.int32)
+        self.mode = mode
+        self.board = np.zeros((size, size), dtype=np.int64)
         self.score = 0
         self.moves = 0
         self.max_tile = 0
-        self.record = 0  # Максимальный тайл за всю игру (для расчета minTile)
-        self.history = []
+        self.record = 0
+        self.history: List[np.ndarray] = []
         
         # Система бонусов
-        self.bonus_count = 0  # Накопленные бонусы удаления
-        self.claimed_bonuses = set()  # Уже полученные бонусы (пороги)
-        self.total_bonuses_earned = 0  # Всего заработано бонусов
-        self.total_bonuses_used = 0  # Всего использовано бонусов
+        self.bonus_count = 0
+        self.claimed_bonuses: set = set()
+        self.total_bonuses_earned = 0
+        self.total_bonuses_used = 0
+        
+        # Система Record Combo
+        self.record_events: List[RecordEvent] = []
+        self.combo_bonuses: List[int] = []  # Тайлы, за которые получен combo bonus
+        self.sort_bonuses = 0  # Супер-бонусы сортировки (combo после 2048)
+        self.last_record_move = -999  # Ход последнего рекорда
+        
+        # Статистика combo
+        self.total_combos = 0
+        self.total_sort_bonuses_earned = 0
+        self.total_sort_bonuses_used = 0
         
         self._spawn_tile()
         self._spawn_tile()
         self._update_max_tile()
     
     def reset(self) -> np.ndarray:
-        """Сброс игры и возврат начального состояния"""
-        self.board = np.zeros((self.size, self.size), dtype=np.int32)
+        """Полный сброс игры"""
+        self.board = np.zeros((self.size, self.size), dtype=np.int64)
         self.score = 0
         self.moves = 0
         self.max_tile = 0
@@ -75,27 +111,38 @@ class Game2048:
         self.total_bonuses_earned = 0
         self.total_bonuses_used = 0
         
+        # Сброс combo
+        self.record_events = []
+        self.combo_bonuses = []
+        self.sort_bonuses = 0
+        self.last_record_move = -999
+        self.total_combos = 0
+        self.total_sort_bonuses_earned = 0
+        self.total_sort_bonuses_used = 0
+        
         self._spawn_tile()
         self._spawn_tile()
         self._update_max_tile()
         return self.get_state()
     
+    # ========================================================================
+    # DYNAMIC TILE SYSTEM
+    # ========================================================================
+    
     def get_min_tile(self) -> int:
         """
-        Вычисление минимального тайла на основе текущего рекорда.
+        Минимальный тайл для спавна.
         
-        Формула: minTile = record / 128
+        Формула: minTile = max(2, record / 128)
         
-        Примеры:
-        - record < 256:  minTile = 2 (стандартно)
-        - record = 256:  minTile = 2 (256/128 = 2)
-        - record = 512:  minTile = 4 (512/128 = 4)
-        - record = 1024: minTile = 8 (1024/128 = 8)
-        - record = 2048: minTile = 16
-        - record = 4096: minTile = 32
-        
-        Returns:
-            int: Минимальное значение тайла для спавна
+        Record  | minTile | Spawn
+        --------|---------|-------
+        < 256   | 2       | 2/4
+        256     | 2       | 2/4
+        512     | 4       | 4/8
+        1024    | 8       | 8/16
+        2048    | 16      | 16/32
+        4096    | 32      | 32/64
         """
         if self.mode == 'classic':
             return 2
@@ -103,90 +150,100 @@ class Game2048:
         if self.record < 256:
             return 2
         
-        # Формула: minTile = record / 128
-        min_tile = self.record // 128
-        
-        # Убедимся, что это степень двойки
-        # (record всегда степень двойки, так что деление на 128 даст степень двойки)
-        return max(2, min_tile)
+        return max(2, self.record // 128)
     
     def get_spawn_tiles(self) -> List[int]:
-        """
-        Получение списка возможных тайлов для спавна.
-        
-        В режиме infinite/dynamic минимальный тайл зависит от рекорда.
-        Спавнятся: minTile (90%) или minTile*2 (10%)
-        
-        Returns:
-            List[int]: [основной_тайл, редкий_тайл]
-        """
+        """Возможные тайлы для спавна: [common, rare]"""
         min_tile = self.get_min_tile()
         return [min_tile, min_tile * 2]
     
     def _spawn_tile(self) -> bool:
-        """
-        Добавление новой плитки.
-        
-        Classic mode: 90% - 2, 10% - 4
-        Dynamic/Infinite mode: 90% - minTile, 10% - minTile*2
-        
-        где minTile = max(2, record / 128)
-        """
-        empty_cells = list(zip(*np.where(self.board == 0)))
-        if not empty_cells:
+        """Спавн нового тайла (90% common, 10% rare)"""
+        empty = list(zip(*np.where(self.board == 0)))
+        if not empty:
             return False
-        row, col = random.choice(empty_cells)
+        
+        row, col = random.choice(empty)
         
         if self.mode in ('dynamic', 'infinite'):
-            spawn_tiles = self.get_spawn_tiles()
-            # 90% основной тайл, 10% редкий
-            value = spawn_tiles[1] if random.random() < 0.1 else spawn_tiles[0]
+            tiles = self.get_spawn_tiles()
+            value = tiles[1] if random.random() < 0.1 else tiles[0]
         else:
-            # Classic 2048 logic
             value = 4 if random.random() < 0.1 else 2
-             
+        
         self.board[row, col] = value
         return True
     
+    # ========================================================================
+    # RECORD & COMBO SYSTEM
+    # ========================================================================
+    
     def _update_max_tile(self):
-        """Обновление максимальной плитки и проверка бонусов"""
+        """Обновление max_tile и проверка record/combo"""
         old_max = self.max_tile
         self.max_tile = int(np.max(self.board))
         
-        # Обновляем рекорд (только растёт)
         if self.max_tile > self.record:
+            old_record = self.record
             self.record = self.max_tile
             
-            # Проверяем бонусы в режиме infinite
+            # Проверяем combo
+            is_combo = (self.moves - self.last_record_move) <= self.COMBO_WINDOW
+            
+            # Записываем событие рекорда
+            event = RecordEvent(
+                tile=self.record,
+                move_number=self.moves,
+                score=self.score,
+                is_combo=is_combo and old_record >= 128  # Combo только от 256 (после 128)
+            )
+            self.record_events.append(event)
+            
+            # Обрабатываем combo
+            if is_combo and self.record in self.COMBO_THRESHOLDS:
+                self._handle_combo(self.record)
+            
+            self.last_record_move = self.moves
+            
+            # Проверяем стандартные бонусы (infinite mode)
             if self.mode == 'infinite':
-                self._check_and_award_bonus()
+                self._check_standard_bonus()
     
-    def _check_and_award_bonus(self):
-        """
-        Проверка и выдача бонуса за достижение нового порога.
-        Бонус выдаётся один раз за каждый порог (2048, 4096, 8192...).
-        """
+    def _handle_combo(self, tile: int):
+        """Обработка Record Combo"""
+        if tile < 256:
+            return
+        
+        self.total_combos += 1
+        self.combo_bonuses.append(tile)
+        
+        # После 2048 даём супер-бонус сортировки
+        if tile >= 2048:
+            self.sort_bonuses += 1
+            self.total_sort_bonuses_earned += 1
+    
+    def _check_standard_bonus(self):
+        """Проверка и выдача стандартных бонусов (удаление тайла)"""
         for threshold in self.BONUS_THRESHOLDS:
             if self.record >= threshold and threshold not in self.claimed_bonuses:
                 self.claimed_bonuses.add(threshold)
                 self.bonus_count += 1
                 self.total_bonuses_earned += 1
     
+    # ========================================================================
+    # BONUS ACTIONS
+    # ========================================================================
+    
     def can_use_bonus(self) -> bool:
-        """Проверка, есть ли доступные бонусы"""
+        """Есть ли бонус удаления"""
         return self.bonus_count > 0
     
+    def can_use_sort_bonus(self) -> bool:
+        """Есть ли супер-бонус сортировки"""
+        return self.sort_bonuses > 0
+    
     def use_bonus_remove_tile(self, row: int, col: int) -> bool:
-        """
-        Использование бонуса для удаления тайла.
-        
-        Args:
-            row: Строка тайла (0-3)
-            col: Столбец тайла (0-3)
-            
-        Returns:
-            bool: True если бонус успешно использован
-        """
+        """Использовать бонус для удаления тайла"""
         if not self.can_use_bonus():
             return False
         
@@ -194,40 +251,88 @@ class Game2048:
             return False
         
         if self.board[row, col] == 0:
-            return False  # Нельзя удалить пустую клетку
+            return False
         
-        # Удаляем тайл
         self.board[row, col] = 0
         self.bonus_count -= 1
         self.total_bonuses_used += 1
+        return True
+    
+    def use_sort_bonus(self) -> bool:
+        """
+        Использовать супер-бонус сортировки.
+        
+        Сортирует все тайлы по убыванию:
+        - Наибольший в левом верхнем углу
+        - Наименьший ближе к правому нижнему
+        - Пустые клетки концентрируются справа внизу
+        - Градиентное расположение (змейка)
+        """
+        if not self.can_use_sort_bonus():
+            return False
+        
+        # Собираем все значения
+        values = self.board.flatten().tolist()
+        
+        # Сортируем по убыванию (нули в конец)
+        non_zero = sorted([v for v in values if v > 0], reverse=True)
+        zeros = [0] * (self.size * self.size - len(non_zero))
+        sorted_values = non_zero + zeros
+        
+        # Заполняем змейкой для градиента
+        new_board = np.zeros_like(self.board)
+        idx = 0
+        for i in range(self.size):
+            if i % 2 == 0:
+                # Чётная строка: слева направо
+                for j in range(self.size):
+                    new_board[i, j] = sorted_values[idx]
+                    idx += 1
+            else:
+                # Нечётная строка: справа налево
+                for j in range(self.size - 1, -1, -1):
+                    new_board[i, j] = sorted_values[idx]
+                    idx += 1
+        
+        self.board = new_board
+        self.sort_bonuses -= 1
+        self.total_sort_bonuses_used += 1
+        self._update_max_tile()
         
         return True
     
-    def get_bonus_info(self) -> dict:
-        """
-        Получение информации о бонусах.
-        
-        Returns:
-            dict: Информация о бонусах
-        """
+    def get_bonus_info(self) -> Dict:
+        """Полная информация о бонусах"""
         next_bonus = None
-        for threshold in self.BONUS_THRESHOLDS:
-            if threshold not in self.claimed_bonuses:
-                next_bonus = threshold
+        for t in self.BONUS_THRESHOLDS:
+            if t not in self.claimed_bonuses:
+                next_bonus = t
                 break
         
         return {
-            'available': self.bonus_count,
+            'remove_available': self.bonus_count,
+            'sort_available': self.sort_bonuses,
             'total_earned': self.total_bonuses_earned,
             'total_used': self.total_bonuses_used,
-            'claimed_thresholds': sorted(list(self.claimed_bonuses)),
+            'total_combos': self.total_combos,
+            'combo_tiles': self.combo_bonuses.copy(),
+            'sort_earned': self.total_sort_bonuses_earned,
+            'sort_used': self.total_sort_bonuses_used,
             'next_bonus_at': next_bonus,
-            'progress_to_next': self.record / next_bonus if next_bonus else 1.0
+            'claimed_thresholds': sorted(list(self.claimed_bonuses))
         }
     
+    # ========================================================================
+    # GAME MECHANICS
+    # ========================================================================
+    
     def _compress(self, row: np.ndarray) -> Tuple[np.ndarray, int]:
-        """Сжатие строки влево и подсчет очков"""
-        # Убираем нули
+        """
+        Сжатие строки влево с подсчётом очков.
+        
+        Очки = сумма значений новых тайлов после слияния.
+        Это оригинальная формула подсчёта очков в 2048.
+        """
         non_zero = row[row != 0]
         score = 0
         result = []
@@ -235,9 +340,10 @@ class Game2048:
         i = 0
         while i < len(non_zero):
             if i + 1 < len(non_zero) and non_zero[i] == non_zero[i + 1]:
+                # Слияние: новый тайл = сумма
                 merged = non_zero[i] * 2
                 result.append(merged)
-                score += merged
+                score += merged  # Очки = значение нового тайла
                 i += 2
             else:
                 result.append(non_zero[i])
@@ -245,10 +351,9 @@ class Game2048:
         
         # Дополняем нулями
         result.extend([0] * (self.size - len(result)))
-        return np.array(result, dtype=np.int32), score
+        return np.array(result, dtype=np.int64), score
     
     def _move_left(self) -> Tuple[np.ndarray, int]:
-        """Движение влево"""
         new_board = np.zeros_like(self.board)
         total_score = 0
         for i in range(self.size):
@@ -257,7 +362,6 @@ class Game2048:
         return new_board, total_score
     
     def _move_right(self) -> Tuple[np.ndarray, int]:
-        """Движение вправо"""
         new_board = np.zeros_like(self.board)
         total_score = 0
         for i in range(self.size):
@@ -267,7 +371,6 @@ class Game2048:
         return new_board, total_score
     
     def _move_up(self) -> Tuple[np.ndarray, int]:
-        """Движение вверх"""
         transposed = self.board.T.copy()
         new_board = np.zeros_like(transposed)
         total_score = 0
@@ -277,7 +380,6 @@ class Game2048:
         return new_board.T, total_score
     
     def _move_down(self) -> Tuple[np.ndarray, int]:
-        """Движение вниз"""
         transposed = self.board.T.copy()
         new_board = np.zeros_like(transposed)
         total_score = 0
@@ -287,13 +389,17 @@ class Game2048:
             total_score += score
         return new_board.T, total_score
     
-    def move(self, direction: Direction) -> Tuple[int, bool, dict]:
+    def move(self, direction: Direction) -> Tuple[float, bool, Dict]:
         """
-        Выполнение хода
-        Returns: (reward, done, info)
+        Выполнение хода.
+        
+        Returns:
+            reward: Награда для AI
+            done: Игра окончена
+            info: Информация о ходе
         """
         old_board = self.board.copy()
-        old_score = self.score
+        old_record = self.record
         
         # Выполняем движение
         if direction == Direction.UP:
@@ -305,134 +411,115 @@ class Game2048:
         else:
             new_board, move_score = self._move_right()
         
-        # Проверяем, изменилось ли поле
         moved = not np.array_equal(old_board, new_board)
+        new_record = False
+        combo_triggered = False
         
         if moved:
             self.board = new_board
             self.score += move_score
             self._spawn_tile()
+            
+            old_max = self.max_tile
             self._update_max_tile()
+            
             self.moves += 1
             self.history.append(old_board.copy())
+            
+            new_record = self.record > old_record
+            
+            # Проверяем, был ли combo
+            if new_record and len(self.record_events) > 0:
+                combo_triggered = self.record_events[-1].is_combo
         
-        # Проверяем конец игры
         done = self.is_game_over()
-        
-        # Рассчитываем награду
         reward = self._calculate_reward(moved, move_score, old_board, done)
         
         info = {
             'moved': moved,
             'score': self.score,
+            'move_score': move_score,
             'max_tile': self.max_tile,
             'record': self.record,
             'moves': self.moves,
-            'merge_score': move_score,
+            'new_record': new_record,
+            'combo_triggered': combo_triggered,
             'min_tile': self.get_min_tile(),
             'spawn_tiles': self.get_spawn_tiles(),
             'bonus_count': self.bonus_count,
+            'sort_bonuses': self.sort_bonuses,
             'mode': self.mode
         }
         
         return reward, done, info
     
-    def _calculate_reward(self, moved: bool, merge_score: int, 
+    def _calculate_reward(self, moved: bool, merge_score: int,
                           old_board: np.ndarray, done: bool) -> float:
-        """
-        Креативная система наград:
-        - Награда за слияние плиток
-        - Бонус за сохранение максимального тайла в углу
-        - Бонус за монотонность (упорядоченность)
-        - Бонус за пустые клетки
-        - Штраф за невозможный ход
-        """
+        """Система наград для AI"""
         if not moved:
-            return -20.0  # Штраф за невозможный ход
+            return -10.0
         
         reward = 0.0
         
-        # Награда за слияние (логарифмическая)
+        # Награда за слияние
         if merge_score > 0:
-            reward += np.log2(merge_score + 1) * 2.5  # Increased weight
+            reward += np.log2(merge_score + 1) * 2.0
         
         # Бонус за пустые клетки
-        empty_cells = np.sum(self.board == 0)
-        reward += empty_cells * 1.0  # Increased weight
+        empty = np.sum(self.board == 0)
+        reward += empty * 0.5
         
-        # Бонус за максимальный тайл в углу
+        # Бонус за угловое расположение max tile
         max_val = np.max(self.board)
-        corners = [self.board[0, 0], self.board[0, -1], 
-                   self.board[-1, 0], self.board[-1, -1]]
+        corners = [
+            self.board[0, 0], self.board[0, -1],
+            self.board[-1, 0], self.board[-1, -1]
+        ]
         if max_val in corners:
-            reward += np.log2(max_val + 1) * 2.0  # Increased weight
+            reward += np.log2(max_val + 1) * 1.5
         
         # Бонус за монотонность
-        reward += self._monotonicity_score() * 0.5  # Increased weight
-        
-        # Бонус за гладкость (меньше разница между соседями)
-        reward += self._smoothness_score() * 0.2
+        reward += self._monotonicity_score() * 0.3
         
         # Штраф за проигрыш
         if done:
-            reward -= 100.0
+            reward -= 50.0
         
         return reward
     
     def _monotonicity_score(self) -> float:
-        """Оценка монотонности - насколько поле упорядочено"""
+        """Оценка упорядоченности доски"""
         score = 0.0
         
-        # Проверяем строки
         for row in self.board:
             non_zero = row[row > 0]
             if len(non_zero) > 1:
-                # Проверяем возрастание или убывание
-                increasing = all(non_zero[i] <= non_zero[i+1] for i in range(len(non_zero)-1))
-                decreasing = all(non_zero[i] >= non_zero[i+1] for i in range(len(non_zero)-1))
-                if increasing or decreasing:
+                if all(non_zero[i] <= non_zero[i+1] for i in range(len(non_zero)-1)):
+                    score += 1.0
+                elif all(non_zero[i] >= non_zero[i+1] for i in range(len(non_zero)-1)):
                     score += 1.0
         
-        # Проверяем столбцы
         for col in self.board.T:
             non_zero = col[col > 0]
             if len(non_zero) > 1:
-                increasing = all(non_zero[i] <= non_zero[i+1] for i in range(len(non_zero)-1))
-                decreasing = all(non_zero[i] >= non_zero[i+1] for i in range(len(non_zero)-1))
-                if increasing or decreasing:
+                if all(non_zero[i] <= non_zero[i+1] for i in range(len(non_zero)-1)):
+                    score += 1.0
+                elif all(non_zero[i] >= non_zero[i+1] for i in range(len(non_zero)-1)):
                     score += 1.0
         
         return score
     
-    def _smoothness_score(self) -> float:
-        """Оценка гладкости - меньше резких переходов между соседними клетками"""
-        score = 0.0
-        for i in range(self.size):
-            for j in range(self.size):
-                if self.board[i, j] > 0:
-                    val = np.log2(self.board[i, j])
-                    # Проверяем соседей
-                    for di, dj in [(0, 1), (1, 0)]:
-                        ni, nj = i + di, j + dj
-                        if 0 <= ni < self.size and 0 <= nj < self.size:
-                            if self.board[ni, nj] > 0:
-                                neighbor_val = np.log2(self.board[ni, nj])
-                                score -= abs(val - neighbor_val)
-        return score
-    
     def is_game_over(self) -> bool:
-        """Проверка конца игры"""
-        # Есть пустые клетки
+        """Проверка окончания игры"""
         if np.any(self.board == 0):
             return False
         
-        # Проверяем возможность слияния по горизонтали
+        # Проверяем возможные слияния
         for i in range(self.size):
             for j in range(self.size - 1):
                 if self.board[i, j] == self.board[i, j + 1]:
                     return False
         
-        # Проверяем возможность слияния по вертикали
         for i in range(self.size - 1):
             for j in range(self.size):
                 if self.board[i, j] == self.board[i + 1, j]:
@@ -441,11 +528,11 @@ class Game2048:
         return True
     
     def get_valid_moves(self) -> List[Direction]:
-        """Получение списка допустимых ходов"""
+        """Список допустимых ходов"""
         valid = []
         for direction in Direction:
-            # Проверяем, изменит ли этот ход поле
             old_board = self.board.copy()
+            
             if direction == Direction.UP:
                 new_board, _ = self._move_up()
             elif direction == Direction.DOWN:
@@ -461,197 +548,185 @@ class Game2048:
         return valid
     
     def get_state(self) -> np.ndarray:
-        """
-        Получение состояния для нейросети
-        Нормализованное представление: log2(value) / 17 (для max = 131072)
-        """
+        """Нормализованное состояние для нейросети"""
         state = np.zeros_like(self.board, dtype=np.float32)
         mask = self.board > 0
-        state[mask] = np.log2(self.board[mask]) / 17.0
+        state[mask] = np.log2(self.board[mask]) / 20.0  # Нормализация до ~1
         return state
     
     def get_features(self) -> np.ndarray:
-        """
-        Дополнительные признаки для нейросети:
-        - Количество пустых клеток (нормализовано)
-        - Максимальный тайл (log2, нормализовано)
-        - Монотонность
-        - Гладкость
-        - Максимальный тайл в углу (0 или 1)
-        - Возможные ходы (4 значения)
-        """
+        """Дополнительные признаки для нейросети"""
         features = []
         
         # Пустые клетки
-        empty_ratio = np.sum(self.board == 0) / (self.size * self.size)
-        features.append(empty_ratio)
+        features.append(np.sum(self.board == 0) / 16.0)
         
-        # Максимальный тайл
+        # Max tile
         max_tile = np.max(self.board)
-        max_tile_norm = np.log2(max_tile + 1) / 17.0 if max_tile > 0 else 0
-        features.append(max_tile_norm)
+        features.append(np.log2(max_tile + 1) / 20.0 if max_tile > 0 else 0)
         
-        # Монотонность (нормализовано)
+        # Монотонность
         features.append(self._monotonicity_score() / 8.0)
         
-        # Гладкость (нормализовано, примерно)
-        features.append(max(min(self._smoothness_score() / 50.0 + 0.5, 1.0), 0.0))
-        
-        # Максимальный тайл в углу
-        corners = [self.board[0, 0], self.board[0, -1], 
-                   self.board[-1, 0], self.board[-1, -1]]
+        # Max в углу
+        corners = [self.board[0,0], self.board[0,-1], self.board[-1,0], self.board[-1,-1]]
         features.append(1.0 if max_tile in corners else 0.0)
         
-        # Возможные ходы
-        valid_moves = self.get_valid_moves()
+        # Валидные ходы
+        valid = self.get_valid_moves()
         for d in Direction:
-            features.append(1.0 if d in valid_moves else 0.0)
+            features.append(1.0 if d in valid else 0.0)
+        
+        # Бонусы (если infinite)
+        features.append(min(self.bonus_count / 5.0, 1.0))
         
         return np.array(features, dtype=np.float32)
     
     def copy(self) -> 'Game2048':
-        """Создание копии игры"""
-        game_copy = Game2048(self.size, self.mode)
-        game_copy.board = self.board.copy()
-        game_copy.score = self.score
-        game_copy.moves = self.moves
-        game_copy.max_tile = self.max_tile
-        game_copy.record = self.record
-        game_copy.bonus_count = self.bonus_count
-        game_copy.claimed_bonuses = self.claimed_bonuses.copy()
-        game_copy.total_bonuses_earned = self.total_bonuses_earned
-        game_copy.total_bonuses_used = self.total_bonuses_used
-        return game_copy
+        """Копия игры"""
+        game = Game2048(self.size, self.mode)
+        game.board = self.board.copy()
+        game.score = self.score
+        game.moves = self.moves
+        game.max_tile = self.max_tile
+        game.record = self.record
+        game.bonus_count = self.bonus_count
+        game.claimed_bonuses = self.claimed_bonuses.copy()
+        game.sort_bonuses = self.sort_bonuses
+        game.last_record_move = self.last_record_move
+        game.combo_bonuses = self.combo_bonuses.copy()
+        return game
     
     def __str__(self) -> str:
-        """Строковое представление игры"""
-        min_tile = self.get_min_tile()
-        spawn_info = f"Spawn: {min_tile}/{min_tile*2}" if self.mode != 'classic' else "Spawn: 2/4"
-        bonus_info = f" | Bonuses: {self.bonus_count}" if self.mode == 'infinite' else ""
+        """Строковое представление"""
+        min_t = self.get_min_tile()
+        spawn = f"{min_t}/{min_t*2}" if self.mode != 'classic' else "2/4"
         
-        lines = [f"Score: {self.score} | Max: {self.max_tile} | Moves: {self.moves} | {spawn_info}{bonus_info}"]
-        lines.append("-" * 45)
+        bonus_str = ""
+        if self.mode == 'infinite':
+            bonus_str = f" | 🎁{self.bonus_count}"
+            if self.sort_bonuses > 0:
+                bonus_str += f" ⚡{self.sort_bonuses}"
+        
+        combo_str = f" | 🔥{self.total_combos}" if self.total_combos > 0 else ""
+        
+        lines = [
+            f"Score: {self.score:,} | Max: {self.max_tile:,} | "
+            f"Moves: {self.moves} | Spawn: {spawn}{bonus_str}{combo_str}"
+        ]
+        lines.append("─" * 50)
+        
         for row in self.board:
-            line = "|"
+            line = "│"
             for val in row:
                 if val == 0:
-                    line += "      .|"
+                    line += "      ·│"
                 else:
-                    line += f"{val:7}|"
+                    line += f"{val:>7,}│"
             lines.append(line)
-        lines.append("-" * 45)
+        
+        lines.append("─" * 50)
         return "\n".join(lines)
 
 
-def demonstrate_dynamic_mechanics():
-    """
-    Демонстрация динамической механики minTile.
-    """
-    print("="*60)
-    print("ДЕМОНСТРАЦИЯ ДИНАМИЧЕСКОЙ МЕХАНИКИ МИНИМАЛЬНОГО ТАЙЛА")
-    print("="*60)
+# ============================================================================
+# DEMO
+# ============================================================================
+
+def demo_score_system():
+    """Демонстрация системы очков"""
+    print("=" * 60)
+    print("СИСТЕМА ОЧКОВ (ОРИГИНАЛЬНАЯ)")
+    print("=" * 60)
     print()
-    print("Формула: minTile = record / 128")
-    print()
-    print("Таблица соответствия:")
-    print("-" * 40)
-    print(f"{'Record':>10} | {'minTile':>8} | {'Spawn':>12}")
-    print("-" * 40)
-    
-    records = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
-    
-    for record in records:
-        if record < 256:
-            min_tile = 2
-        else:
-            min_tile = record // 128
-        spawn = f"{min_tile}/{min_tile*2}"
-        marker = " ← исчезает " + str(min_tile // 2) if record >= 256 else ""
-        print(f"{record:>10} | {min_tile:>8} | {spawn:>12}{marker}")
-    
-    print("-" * 40)
+    print("При слиянии двух плиток:")
+    print("  2 + 2 = 4   →  +4 очка")
+    print("  4 + 4 = 8   →  +8 очков")
+    print("  8 + 8 = 16  →  +16 очков")
+    print("  ...")
+    print("  1024 + 1024 = 2048  →  +2048 очков")
     print()
 
 
-def demonstrate_bonus_system():
-    """
-    Демонстрация системы бонусов.
-    """
-    print("="*60)
-    print("ДЕМОНСТРАЦИЯ СИСТЕМЫ БОНУСОВ (INFINITE MODE)")
-    print("="*60)
+def demo_combo_system():
+    """Демонстрация системы combo"""
+    print("=" * 60)
+    print("СИСТЕМА RECORD COMBO")
+    print("=" * 60)
     print()
-    print("Бонусы выдаются при достижении:")
-    for i, threshold in enumerate(Game2048.BONUS_THRESHOLDS[:8], 1):
-        print(f"  {i}. {threshold:>7} - бонус #{i}")
+    print("Record Combo срабатывает когда:")
+    print("  Новый рекорд установлен в течение 2 ходов после предыдущего")
+    print()
+    print("Награды за combo:")
+    print("  256-combo   → +1 обычный бонус")
+    print("  512-combo   → +1 обычный бонус")
+    print("  1024-combo  → +1 обычный бонус")
+    print("  2048-combo  → +1 СУПЕР-БОНУС СОРТИРОВКИ ⚡")
+    print("  4096-combo  → +1 СУПЕР-БОНУС СОРТИРОВКИ ⚡")
     print("  ...")
     print()
-    print("Каждый бонус позволяет удалить один любой блок с поля.")
-    print("Бонусы накапливаются и могут быть использованы в любое время.")
+    print("Супер-бонус сортировки:")
+    print("  Автоматически сортирует все тайлы:")
+    print("  • Наибольший → левый верхний угол")
+    print("  • Наименьший → правый нижний угол")
+    print("  • Змейкообразный градиент")
+    print("  • Пустые клетки концентрируются справа внизу")
     print()
 
 
-def test_game_modes():
-    """
-    Тестирование всех режимов игры.
-    """
-    print("="*60)
-    print("ТЕСТИРОВАНИЕ РЕЖИМОВ ИГРЫ")
-    print("="*60)
-    print()
+def demo_sort_bonus():
+    """Демонстрация супер-бонуса сортировки"""
+    print("=" * 60)
+    print("ДЕМО: СУПЕР-БОНУС СОРТИРОВКИ")
+    print("=" * 60)
     
-    for mode in ['classic', 'dynamic', 'infinite']:
-        print(f"\n--- Режим: {mode.upper()} ---")
-        game = Game2048(mode=mode)
-        
-        # Симулируем высокий рекорд для демонстрации
-        game.record = 1024
-        game.max_tile = 1024
-        
-        if mode == 'infinite':
-            # Симулируем получение бонуса
-            game.record = 2048
-            game.max_tile = 2048
-            game._check_and_award_bonus()
-        
-        print(f"Record: {game.record}")
-        print(f"Min tile: {game.get_min_tile()}")
-        print(f"Spawn tiles: {game.get_spawn_tiles()}")
-        
-        if mode == 'infinite':
-            bonus_info = game.get_bonus_info()
-            print(f"Bonuses available: {bonus_info['available']}")
-            print(f"Next bonus at: {bonus_info['next_bonus_at']}")
+    game = Game2048(mode='infinite')
+    
+    # Создаём хаотичную доску
+    game.board = np.array([
+        [4, 32, 2, 8],
+        [256, 2, 64, 4],
+        [16, 128, 8, 2],
+        [2, 4, 16, 32]
+    ], dtype=np.int64)
+    game.sort_bonuses = 1
+    game._update_max_tile()
+    
+    print("\nДО сортировки:")
+    print(game)
+    
+    game.use_sort_bonus()
+    
+    print("\nПОСЛЕ сортировки:")
+    print(game)
+    print()
 
 
 if __name__ == "__main__":
-    # Демонстрация механик
-    demonstrate_dynamic_mechanics()
-    demonstrate_bonus_system()
-    test_game_modes()
+    demo_score_system()
+    demo_combo_system()
+    demo_sort_bonus()
     
-    print("\n" + "="*60)
-    print("ИНТЕРАКТИВНЫЙ ТЕСТ INFINITE MODE")
-    print("="*60)
+    print("=" * 60)
+    print("ТЕСТ ИГРЫ")
+    print("=" * 60)
     
-    # Тестирование игры в infinite режиме
     game = Game2048(mode='infinite')
-    print("\nНачальное состояние:")
+    print("\nНачало игры:")
     print(game)
     
-    # Тест нескольких ходов
+    # Несколько случайных ходов
     for i in range(10):
-        valid_moves = game.get_valid_moves()
-        if not valid_moves:
-            print("Игра окончена!")
+        valid = game.get_valid_moves()
+        if not valid:
             break
-        
-        move = random.choice(valid_moves)
+        move = random.choice(valid)
         reward, done, info = game.move(move)
-        print(f"\nХод {i+1}: {move.name}, Reward: {reward:.2f}")
-        print(f"Info: minTile={info['min_tile']}, spawn={info['spawn_tiles']}, bonuses={info['bonus_count']}")
-        print(game)
         
-        if done:
-            print("Игра окончена!")
-            break
+        if info.get('new_record'):
+            print(f"\n🎯 Новый рекорд: {info['record']}!")
+            if info.get('combo_triggered'):
+                print("🔥 COMBO!")
+    
+    print(f"\nПосле 10 ходов:")
+    print(game)

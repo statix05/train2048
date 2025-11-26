@@ -10,11 +10,12 @@ Alpha2048 - AI для игры 2048
 - Оптимизация под Apple Silicon (MPS)
 
 Режимы запуска:
-    python main.py              - Показать справку
+    python main.py              - Графический интерфейс (GUI)
+    python main.py gui          - Графический интерфейс (GUI)
     python main.py demo         - Демонстрация AI
     python main.py train        - Обучение модели
     python main.py train 500    - Обучение на 500 игр
-    python main.py play         - Ручная игра
+    python main.py play         - Консольная игра
     python main.py play --ai    - Наблюдение за AI
     python main.py info         - Информация о системе
 """
@@ -66,6 +67,17 @@ def show_info():
             print("   (none)")
     else:
         print("   (models directory not found)")
+
+
+def run_gui():
+    """Запуск графического интерфейса"""
+    try:
+        from gui import main as gui_main
+        gui_main()
+    except ImportError as e:
+        print(f"❌ Ошибка импорта GUI: {e}")
+        print("Установите pygame: pip install pygame")
+        sys.exit(1)
 
 
 def demo():
@@ -183,7 +195,7 @@ def play(args):
         # Ручная игра
         print("🎮 Manual Play")
         print("Controls: W/↑=UP, S/↓=DOWN, A/←=LEFT, D/→=RIGHT, Q=Quit")
-        print("In infinite mode: B=Use Bonus (if available)")
+        print("In infinite mode: B=Use Bonus (if available), T=Sort Bonus")
         
         key_map = {
             'w': Direction.UP, 'W': Direction.UP,
@@ -197,8 +209,9 @@ def play(args):
             print(game)
             
             if game.bonus_count > 0:
-                print(f"\n🎁 Bonuses available: {game.bonus_count}")
-                print("   Press B to use (then enter row,col)")
+                print(f"\n🎁 Remove bonuses: {game.bonus_count} (Press B)")
+            if game.sort_bonuses > 0:
+                print(f"⚡ Sort bonuses: {game.sort_bonuses} (Press T)")
             
             try:
                 key = input("\nMove (WASD/Q): ").strip()
@@ -217,6 +230,11 @@ def play(args):
                             print("❌ Invalid position")
                     except:
                         print("❌ Invalid input")
+                    continue
+                
+                if key.lower() == 't' and game.sort_bonuses > 0:
+                    if game.use_sort_bonus():
+                        print("⚡ Tiles sorted!")
                     continue
                 
                 if key in key_map:
@@ -238,6 +256,9 @@ def main():
     )
     
     subparsers = parser.add_subparsers(dest='command', help='Command')
+    
+    # GUI command (default)
+    subparsers.add_parser('gui', help='Launch graphical interface')
     
     # Info command
     subparsers.add_parser('info', help='Show system information')
@@ -267,7 +288,7 @@ def main():
                              help='Disable curriculum learning')
     
     # Play command
-    play_parser = subparsers.add_parser('play', help='Play the game')
+    play_parser = subparsers.add_parser('play', help='Play the game (console)')
     play_parser.add_argument('--ai', action='store_true',
                             help='Watch AI play')
     play_parser.add_argument('--model', type=str,
@@ -281,7 +302,9 @@ def main():
     
     setup_environment()
     
-    if args.command == 'info':
+    if args.command == 'gui':
+        run_gui()
+    elif args.command == 'info':
         show_info()
     elif args.command == 'demo':
         demo()
@@ -290,13 +313,8 @@ def main():
     elif args.command == 'play':
         play(args)
     else:
-        parser.print_help()
-        print("\n" + "=" * 60)
-        print("Quick start:")
-        print("  python main.py demo          # See AI in action")
-        print("  python main.py train 100     # Train for 100 games")
-        print("  python main.py play --ai     # Watch trained AI")
-        print("=" * 60)
+        # Default: launch GUI
+        run_gui()
 
 
 if __name__ == "__main__":

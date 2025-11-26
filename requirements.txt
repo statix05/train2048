@@ -1,5 +1,5 @@
-# 2048 AI Game Dependencies
-# Оптимизировано для macOS Apple Silicon (M1/M2/M3)
+# Alpha2048 - AI для игры 2048
+# Оптимизировано для macOS Apple Silicon (M1/M2/M3/M4)
 
 # Core
 numpy>=1.21.0
@@ -7,5 +7,5 @@ numpy>=1.21.0
 # Deep Learning - PyTorch с поддержкой MPS (Metal Performance Shaders)
 torch>=2.0.0
 
-# GUI использует встроенный Tkinter (не требует установки)
-# pygame НЕ нужен - убран из-за несовместимости с Python 3.14
+# GUI - Pygame для футуристичного интерфейса
+pygame>=2.0.0
