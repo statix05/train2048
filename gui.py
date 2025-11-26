@@ -108,13 +108,14 @@ class Alpha2048GUI:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         
-        # Fonts using freetype (compatible with Python 3.14)
-        self.font_title = pygame.freetype.SysFont('Arial', 56)
-        self.font_large = pygame.freetype.SysFont('Arial', 38)
-        self.font_medium = pygame.freetype.SysFont('Arial', 28)
-        self.font_small = pygame.freetype.SysFont('Arial', 18)
-        self.font_tile = pygame.freetype.SysFont('Arial', 32)
-        self.font_tile_small = pygame.freetype.SysFont('Arial', 24)
+        # Fonts using freetype with None (default font) - compatible with Python 3.14
+        # Using None loads the default pygame font without needing system font lookup
+        self.font_title = pygame.freetype.Font(None, 56)
+        self.font_large = pygame.freetype.Font(None, 38)
+        self.font_medium = pygame.freetype.Font(None, 28)
+        self.font_small = pygame.freetype.Font(None, 18)
+        self.font_tile = pygame.freetype.Font(None, 32)
+        self.font_tile_small = pygame.freetype.Font(None, 24)
         
         # Game
         self.game: Optional[Game2048] = None
